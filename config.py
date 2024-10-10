@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from OpenFOAM.utils import read_mesh_type, read_solver_type, run_the_solver
+from utils import read_mesh_type, read_solver_type, run_the_solver
 
 
 @dataclass
@@ -12,6 +12,8 @@ class BaseConfig:
     modelselector_dir:Path = Path(root_dir, "ModelSelector")
     openfoam_dir:Path = Path(root_dir, "OpenFOAM")
     assets_dir:Path = Path(root_dir, "Assets")
+
+
 class OpenfoamConfig(BaseConfig):
     def __init__(self):
         super().__init__()
