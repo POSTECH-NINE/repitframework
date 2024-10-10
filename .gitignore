@@ -1,0 +1,4 @@
+# Ignore Assets and logs dirctories
+Assets/
+logs/
+*.pyc
