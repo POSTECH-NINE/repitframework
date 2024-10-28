@@ -1,5 +1,4 @@
 import torch
-
 class FVMN(torch.nn.Module):
     def __init__(self, input_size:int=1, hidden_size:int=64, output_size:int=1, num_layers:int=4):
         super(FVMN, self).__init__()
@@ -10,3 +9,6 @@ class FVMN(torch.nn.Module):
 
     def forward(self, x):
         pass
+
+if __name__ == "__main__":
+    pass

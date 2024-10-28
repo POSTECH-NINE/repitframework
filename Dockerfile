@@ -20,14 +20,6 @@ RUN echo ". /opt/openfoam11/etc/bashrc" >> /home/openfoam/.bashrc
 #Make the run directory: 
 RUN export FOAM_RUN=/home/openfoam/run && mkdir -p $FOAM_RUN 
 
-# COPY the binding script to the run directory: 
-COPY ./binding_script.py /home/openfoam/binding_script.py
-
-# Make alias to run the binding script: 
-RUN echo "alias Dmake='python3 /home/openfoam/binding_script.py'" >> /home/openfoam/.bashrc
-RUN echo "alias python='python3'" >> /home/openfoam/.bashrc
-RUN echo "alias home='$HOME'"
-
 #Specify the volume:
 VOLUME [ "/home/host_mount" ]
 
