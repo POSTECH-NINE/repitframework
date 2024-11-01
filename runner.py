@@ -1,4 +1,4 @@
-from repitframework.OpenFOAM.utils import run_the_solver, update_time_foamDictionary
+from repitframework.OpenFOAM.utils import run_solver, update_time_foamDictionary
 from repitframework.config import OpenfoamConfig
 
 if __name__ == "__main__":

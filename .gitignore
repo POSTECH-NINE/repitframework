@@ -2,4 +2,5 @@
 repitframework/Assets/
 repitframework/logs/
 *.pyc
-notes.txt
+.vscode/
+**/__pycache__

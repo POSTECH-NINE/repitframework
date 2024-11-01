@@ -21,7 +21,7 @@ RUN echo ". /opt/openfoam11/etc/bashrc" >> /home/openfoam/.bashrc
 RUN export FOAM_RUN=/home/openfoam/run && mkdir -p $FOAM_RUN 
 
 #Specify the volume:
-VOLUME [ "/home/host_mount" ]
+VOLUME [ "/home/openfoam/repitframework" ]
 
 # Expose the port for ParaView/ParaFOAM:
 EXPOSE 8080

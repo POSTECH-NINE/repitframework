@@ -6,7 +6,7 @@ import re
 import logging
 import numpy as np
 
-__all__ = [ "parse_to_numpy", "run_the_solver", "read_mesh_type", 
+__all__ = [ "parse_to_numpy", "run_solver", "read_mesh_type", 
            "read_solver_type", "update_time_foamDictionary","manage_assets"]
 ROOT_DIR = Path(__file__).parent.parent.resolve()
 
@@ -42,6 +42,12 @@ def parse_to_numpy(solver_dir:Path = None,
                     running the solver.
     assets_dir: str: The path to the assets directory where we want to save the data in the numpy
                      format. 
+
+    OpenFOAM command used: 
+    1. List the time directories:
+    foamListTimes -case solver_dir
+    2. Deleting the time directories:
+    foamListTimes -case solver_dir -rm -time " f,2,3,4,5"
     '''
     # List the time directories
     logger.debug("Listing the time directories!")
@@ -58,7 +64,7 @@ def parse_to_numpy(solver_dir:Path = None,
             try:
                 data = Ofpp.parse_internal_field(Path(time_dir, var))
                 logger.debug(f"Data parsed to numpy:{var}_{time_dir.name} --> {data.shape}")
-                np.save(Path(assets_dir, f"{var}_{time_dir.name}.npy"), data)
+                np.save(Path(assets_dir, f"{var}_{time_dir.name}.npz"), data)
             except Exception as e:
                 logger.error(f"Error in parsing the data to numpy: {e}")
     
@@ -73,6 +79,51 @@ def parse_to_numpy(solver_dir:Path = None,
         logger.error(f"Error in deleting the time directories: {e}")
 
     return None
+
+def write_scalar_smap(filename, field_name, units, data):
+    """
+    Writes a scalar field to a .smap file.
+    """
+    with open(filename, 'w') as f:
+        f.write(f"# STAR-CD Scalar Field File\n")
+        f.write(f"FIELD_NAME: {field_name}\n")
+        f.write(f"UNITS: {units}\n")
+        f.write(f"NUM_POINTS: {len(data)}\n\n")
+        f.write("NODE_ID VALUE\n")
+        
+        for node_id, value in enumerate(data, start=1):
+            f.write(f"{node_id} {value}\n")
+
+
+def write_vector_smap(filename, field_name, units, data):
+    """
+    Writes a vector field to a .smap file.
+    """
+    with open(filename, 'w') as f:
+        f.write(f"# STAR-CD Vector Field File\n")
+        f.write(f"FIELD_NAME: {field_name}\n")
+        f.write(f"UNITS: {units}\n")
+        f.write(f"NUM_POINTS: {len(data)}\n\n")
+        f.write("NODE_ID VX VY VZ\n")
+        
+        for node_id, vector in enumerate(data, start=1):
+            f.write(f"{node_id} {vector[0]} {vector[1]} {vector[2]}\n")
+
+
+def write_tensor_smap(filename, field_name, units, data):
+    """
+    Writes a tensor field to a .smap file.
+    """
+    with open(filename, 'w') as f:
+        f.write(f"# STAR-CD Tensor Field File\n")
+        f.write(f"FIELD_NAME: {field_name}\n")
+        f.write(f"UNITS: {units}\n")
+        f.write(f"NUM_POINTS: {len(data)}\n\n")
+        f.write("NODE_ID XX XY XZ YX YY YZ ZX ZY ZZ\n")
+        
+        for node_id, tensor in enumerate(data, start=1):
+            f.write(f"{node_id} " + " ".join(map(str, tensor.flatten())) + "\n")
+
 
 def numpy_to_OpenFOAM(solver_dir:Path = None, 
                       assets_dir:Path = ROOT_DIR/"Assets", 
@@ -90,7 +141,7 @@ def numpy_to_OpenFOAM(solver_dir:Path = None,
     
 
 # TODO: Don't forget to write test cases for every functions inside OpenFOAM module.
-def run_the_solver(solver_dir:Path = None, 
+def run_solver(solver_dir:Path = None, 
                    assets_dir:Path = ROOT_DIR/"Assets", 
                    mesh_type:str = "blockMesh") -> None:
     '''
@@ -116,6 +167,11 @@ def run_the_solver(solver_dir:Path = None,
     Functionality: 
     Saves the data in the Assets directory. 
 
+    OpenFOAM commands used:
+    1. Create the mesh:
+    blockMesh -case solver_dir
+    2. Run the solver:
+    buoyantFoam -case solver_dir
     '''
     mesh_ = read_mesh_type(solver_dir=solver_dir, mesh_type=mesh_type)
     solver_ = read_solver_type(solver_dir=solver_dir)
@@ -171,6 +227,10 @@ def read_solver_type(solver_dir:Path = None) -> str:
 
     Returns:
     solver_type: str: The solver type used to solve the problem.
+
+    OpenFOAM command used:
+    1. Get application type, like buoyantFoam, simpleFoam, etc.
+    foamDictionary system/controlDict -entry application -value
     '''
 
     control_dict_path = Path.joinpath(solver_dir, "system", "controlDict")
@@ -186,10 +246,19 @@ def read_solver_type(solver_dir:Path = None) -> str:
     
     return solver_type
 
-def update_time_foamDictionary(solver_dir:Path, present_time:int, end_time:int) -> None:
+def update_time_foamDictionary(solver_dir:Path, present_time, end_time) -> None:
     '''
     This function updates the time in the controlDict file. This is useful when you want to 
     run the solver for a specific time. 
+
+    Args:
+    solver_dir: str: The path to the solver directory.
+    present_time: int: The present time of the simulation.
+    end_time: int: The end time of the simulation.
+
+    OpenFOAM command used:
+    1. Update the time in the controlDict file:
+    foamDictionary system/controlDict -set startTime=0,endTime=10
     '''
     controlDict_path = Path.joinpath(solver_dir, "system", "controlDict")
     if not controlDict_path.exists():

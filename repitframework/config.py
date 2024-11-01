@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from repitframework.OpenFOAM.utils import read_mesh_type, read_solver_type, run_the_solver
+from repitframework.OpenFOAM.utils import read_solver_type
 
 
 @dataclass
