@@ -34,9 +34,9 @@ def parse_numpy(data: np.ndarray) -> str:
 
 def numpyToFoam(file_path:Path, 
                 variable:str, 
-                latestCFD_time:int, 
+                previousCFD_time, 
                 solver_dir:Path,
-                time_step=1) -> bool:
+                presentCFD_time) -> bool:
     """
     This function takes a numpy file and writes it to an OpenFOAM file.
     Example: 
@@ -46,14 +46,21 @@ def numpyToFoam(file_path:Path,
     file_path: Path to the numpy file.
     variable: The OpenFOAM variable name.
     latestCFD_time: The current time step.
+
+    **************** NOTE ****************
+    The latestCFD_time should be the time step for which the OpenFOAM file is already present. 
+    Because, we need to copy format to the present time step for which we are trying to run the 
+    simulation.
+    **************************************
+
     solver_dir: The directory of the solver.
 
     Returns:
     True if the function executes successfully.
     """
     
-    latestCFD_time_dir = Path(str(solver_dir) + f"/{latestCFD_time}") # time directory for current time
-    next_time_dir      = Path(str(solver_dir) + f"/{latestCFD_time+time_step}") # time directory for next time (latestCFD_time + 1)
+    latestCFD_time_dir = Path(str(solver_dir) + f"/{previousCFD_time}") # time directory for current time
+    next_time_dir      = Path(str(solver_dir) + f"/{presentCFD_time}") # time directory for next time (latestCFD_time + 1)
     openfoam_var_path  = Path(str(next_time_dir) + f"/{variable}")      # openfoam variable path: where we write the numpy data
 
     subprocess.run(["cp", "-r", latestCFD_time_dir, next_time_dir]) if not next_time_dir.exists() else None     # copy the foam time directory to t+1
@@ -64,8 +71,8 @@ def numpyToFoam(file_path:Path,
 
     with open(openfoam_var_path, "r") as file:
         foam_data_temp = file.read()
-        foam_data = re.sub(r'(location\s*)"([^"]*)"',rf'\1"{latestCFD_time+time_step}"',foam_data_temp) # update the location to the next time step
-        foam_data = re.sub(r'\([\s\S]*?\)\n;', f'{data_str}',foam_data) # update the data
+        foam_data = re.sub(r'(location\s*)"([^"]*)"',rf'\1"{presentCFD_time}"',foam_data_temp) # update the location to the next time step
+        foam_data = re.sub(r'\([\s\S]*?\)\n;', f'{data_str}',foam_data,count=1) # Update the data in the OpenFOAM file; count=1 to replace only the first occurrence.
 
     with open(openfoam_var_path, "w") as file:
         file.write(foam_data)
@@ -75,19 +82,19 @@ def numpyToFoam(file_path:Path,
 if __name__ == "__main__":
     from utils import run_solver, update_time_foamDictionary
 
-    current_time:int = 2
+    previousCFD_time:int = 2
+    presentCFD_time:int = 5
     time_step:int = 1
-    next_time:int = current_time + time_step
-
     openfoam_config = config.OpenfoamConfig()
     solver_dir:Path = openfoam_config.solver_dir
 
     for var in openfoam_config.data_vars:
-        numpy_file_path = openfoam_config.assets_dir / openfoam_config.case_name / f"{var}_{next_time}.npy"
-        numpyToFoam(numpy_file_path, var, current_time, solver_dir)
+        numpy_file_path = openfoam_config.assets_dir / openfoam_config.case_name / f"{var}_{presentCFD_time}.npy"
+        numpyToFoam(numpy_file_path, var, previousCFD_time, solver_dir, presentCFD_time)
 
     check_time_update:bool = update_time_foamDictionary(solver_dir=solver_dir,
-                                                    present_time=next_time,
-                                                    end_time=next_time + 2*time_step)
+                                                    present_time=presentCFD_time,
+                                                    end_time=presentCFD_time + 2*time_step)
+    
     if check_time_update:
         run_solver()

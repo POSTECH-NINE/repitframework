@@ -2,7 +2,7 @@
   =========                 |
   \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
    \\    /   O peration     | Website:  https://openfoam.org
-    \\  /    A nd           | Version:  11
+    \\  /    A nd           | Version:  12
      \\/     M anipulation  |
 \*---------------------------------------------------------------------------*/
 FoamFile
@@ -18,11 +18,11 @@ application     buoyantFoam;
 
 startFrom       latestTime;
 
-startTime       18.0;
+startTime       5;
 
 stopAt          endTime;
 
-endTime         20.0;
+endTime         7;
 
 deltaT          1;
 

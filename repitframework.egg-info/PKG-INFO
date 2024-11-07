@@ -1,0 +1,25 @@
+Metadata-Version: 2.1
+Name: repitframework
+Version: 1.0
+Summary: Automation framework for ML-CFD cross-computation.
+Home-page: https://github.com/JBNU-NINE/repitframework
+Author: Shilaj Baral
+Author-email: shilajbaral@jbnu.ac.kr
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: Linux
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE.md
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: Ofpp
+Requires-Dist: torch
+
+# RePIT-Framework
+
+This framework aims at automating the process for ML-CFD cross computation. It is the extension of RePIT algorithm introduced by [J. Jeon et. al](https://arxiv.org/abs/2206.06817).
+
+# Use the framework in development mode: 
+`cd` to the root directory of the project folder, then 
+`pip install -e .`

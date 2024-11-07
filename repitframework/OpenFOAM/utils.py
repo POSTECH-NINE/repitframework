@@ -64,7 +64,7 @@ def parse_to_numpy(solver_dir:Path = None,
             try:
                 data = Ofpp.parse_internal_field(Path(time_dir, var))
                 logger.debug(f"Data parsed to numpy:{var}_{time_dir.name} --> {data.shape}")
-                np.save(Path(assets_dir, f"{var}_{time_dir.name}.npz"), data)
+                np.save(Path(assets_dir, f"{var}_{time_dir.name}.npy"), data)
             except Exception as e:
                 logger.error(f"Error in parsing the data to numpy: {e}")
     
@@ -82,7 +82,7 @@ def parse_to_numpy(solver_dir:Path = None,
 
 # TODO: Don't forget to write test cases for every functions inside OpenFOAM module.
 def run_solver(solver_dir:Path = ROOT_DIR/"Solvers"/"natural_convection", 
-                   assets_dir:Path = ROOT_DIR/"Assets"/"natural_convection", 
+                   assets_dir:Path = ROOT_DIR/"Assets", 
                    mesh_type:str = "blockMesh") -> bool:
     '''
     This function aims at running the CFD solver of your interest. 
@@ -121,7 +121,9 @@ def run_solver(solver_dir:Path = ROOT_DIR/"Solvers"/"natural_convection",
         logger.debug("Creating the mesh!")
         command = [mesh_, "-case", solver_dir]
         mesh_result = subprocess.run(command, capture_output=True, text=True)
-        logger.debug(f"\n Mesh Output: {mesh_result.stdout}\n")
+        logger.debug(f"\n Mesh Output: {mesh_result.stdout}\n :-> Mesh return code: {mesh_result.returncode}")
+        if mesh_result.returncode != 0:
+            raise Exception(f"Exception occurred; while creating the mesh. \n{mesh_result.stderr}")
     except subprocess.CalledProcessError as e:
         logger.error(f"Error in creating the mesh: {e}")
         return False
@@ -131,7 +133,9 @@ def run_solver(solver_dir:Path = ROOT_DIR/"Solvers"/"natural_convection",
         logger.info("Running the CFD solver!")
         command = [solver_, "-case", solver_dir]
         solver_result = subprocess.run(command, capture_output=True, text=True)
-        logger.debug(f"\n Solver Output: {solver_result.stdout}\n")
+        logger.debug(f"\n Solver Output: {solver_result.stdout}\n:-> Solver return code: {solver_result.returncode}")
+        if solver_result.returncode != 0:
+            raise Exception(f"Exception occurred; while running the solver. \n {solver_result.stderr}")
     except subprocess.CalledProcessError as e:
         logger.error(f"Error in running the solver: {e}")
         return False
@@ -174,13 +178,8 @@ def read_solver_type(solver_dir:Path = None) -> str:
     1. Get application type, like buoyantFoam, simpleFoam, etc.
     foamDictionary system/controlDict -entry application -value
     '''
-
-    control_dict_path = Path.joinpath(solver_dir, "system", "controlDict")
-    if not control_dict_path.exists():
-        raise FileNotFoundError(f"controlDict file not found in the directory: {solver_dir}")
-    
     try:
-        command = ["foamDictionary",control_dict_path, "-entry", "application", "-value"]
+        command = ["foamDictionary","-case",solver_dir, "-entry", "application", "-value", "system/controlDict"]
         command_result = subprocess.run(command, capture_output=True, text=True)
         solver_type = command_result.stdout
     except subprocess.CalledProcessError as e:
@@ -202,26 +201,21 @@ def update_time_foamDictionary(solver_dir:Path, present_time, end_time) -> bool:
     1. Update the time in the controlDict file:
     foamDictionary system/controlDict -set startTime=0,endTime=10
     '''
-    controlDict_path = Path.joinpath(solver_dir, "system", "controlDict")
-    if not controlDict_path.exists():
-        return False
-        raise FileNotFoundError(f"controlDict file not found in the directory: {solver_dir}")
-    
-    command_list = ["foamDictionary", controlDict_path, "-set", 
-                    f"startTime={present_time},endTime={end_time}"]
+    command_list = ["foamDictionary", "-case",solver_dir, "-set", 
+                    f"startTime={present_time},endTime={end_time}","system/controlDict"]
     try:
         command_result = subprocess.run(command_list, capture_output=True, text=True)
         logger.debug(f"Time updated successfully: {command_result.stdout}")
     except subprocess.CalledProcessError as e:
-        return False
         logger.error(f"Error in updating the time: {e}")
+        return False
+
 
     return True
 
 if __name__ == "__main__":
     solver_dir = ROOT_DIR/"Solvers"/"natural_convection"
     assets_dir = ROOT_DIR/"Assets"
-
     # run_the_solver(solver_dir=solver_dir)
     # update_time_foamDictionary(solver_dir=solver_dir, present_time=2, end_time=3)
     # logger.info("Solver ran successfully!")

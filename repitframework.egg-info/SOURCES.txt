@@ -1,0 +1,8 @@
+LICENSE.md
+README.md
+setup.py
+repitframework.egg-info/PKG-INFO
+repitframework.egg-info/SOURCES.txt
+repitframework.egg-info/dependency_links.txt
+repitframework.egg-info/requires.txt
+repitframework.egg-info/top_level.txt
