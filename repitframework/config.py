@@ -34,7 +34,7 @@ class OpenfoamConfig(BaseConfig):
         self.case_name:str = None if self.solver_dir is None else self.solver_dir.name
         self.mesh_type:str = "blockMesh"
         self.solver_type:str = "buoyantFoam"
-        self.data_vars: list = ["U", "T","p"] # TODO: define this in base class: see for how to include list in dataclass.
+        self.data_vars: list = ["U", "T"] # TODO: define this in base class: see for how to include list in dataclass.
 
 
 class TrainingConfig(BaseConfig):

@@ -62,7 +62,7 @@ def parse_to_numpy(solver_dir:Path = None,
             try:
                 data = Ofpp.parse_internal_field(Path(time_dir, var))
                 logger.debug(f"Data parsed to numpy:{var}_{time_dir.name} --> {data.shape}")
-                np.save(Path(assets_dir, f"{var}_{time_dir.name}.npy"), data)
+                np.save(Path(assets_dir, f"{var}_{float(time_dir.name)}.npy"), data) # We are saving it in float because we want to keep things consistent.
             except Exception as e:
                 logger.error(f"Error in parsing the data to numpy: {e}")
                 return False
