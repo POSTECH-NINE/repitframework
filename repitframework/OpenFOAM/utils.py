@@ -1,6 +1,7 @@
 from pathlib import Path
 import subprocess
 from datetime import datetime
+from typing import List
 
 import Ofpp
 import numpy as np
@@ -85,6 +86,16 @@ class OpenfoamUtils:
         return solver_type.strip()
     
     @staticmethod
+    def generate_intervals(start_time:int|float, end_time:int|float, time_step:int|float, round_to:int=2) -> list:
+        time_list = []
+        time_list.append(round(start_time, round_to))
+        running_time = start_time
+        while running_time <= end_time:
+            running_time += time_step # To include end_time also in the list. It is kept before append.
+            time_list.append(round(running_time, round_to))
+        return time_list
+
+    @staticmethod
     def run_subprocess(command_list:list):
         '''
         Run the subprocess command and return the output.
@@ -94,10 +105,12 @@ class OpenfoamUtils:
 
     @staticmethod
     def parse_to_numpy(openfoam_config:OpenfoamConfig,
+                       start_time:float,
+                       end_time:float,
                        solver_dir:Path=None,
                        save_path:Path=None,
                        variables:list=None,
-                       time_list:list[str]=None,
+                       write_interval:float=0.01,
                        del_dirs:bool=False) -> Path:
         '''
         OpenFOAM stores the data in the form of Dictionary(OpenFOAM type) files. But to train the model
@@ -141,19 +154,24 @@ class OpenfoamUtils:
         solver_dir = solver_dir if solver_dir else openfoam_config.solver_dir
         save_path = save_path if save_path else openfoam_config.assets_path
         variables = variables if variables else openfoam_config.extend_variables()
+        write_interval = write_interval if write_interval else openfoam_config.write_interval
+        round_to = openfoam_config.round_to
+        time_list: List[int|float] = OpenfoamUtils.generate_intervals(start_time, end_time, write_interval, round_to)
 
-        if not time_list:# List the time directories
-            commands_to_list_time_directories = ["foamListTimes", "-case", solver_dir]
-            time_list = OpenfoamUtils.run_subprocess(commands_to_list_time_directories).split("\n")
-            time_list = [i for i in time_list if i]
-        time_directories = [Path(solver_dir,i) for i in time_list]
+        time_list = [int(time) if time.is_integer() else time for time in time_list]
+        time_directories = [Path(solver_dir,str(i)) for i in time_list]
 
         # Parse the data to numpy
         for time_dir in time_directories:
             for var in variables:
                 try:
                     data = Ofpp.parse_internal_field(Path(time_dir, var))
-                    openfoam_config.logger.debug(f"Data parsed to numpy:{var}_{time_dir.name} --> {data.shape}")
+                    if var == "T":
+                        data = np.round(data, 9)
+                    else:
+                        data = np.round(data, 18)
+                        
+                    openfoam_config.logger.debug(f"Data parsed to numpy:{var}_{float(time_dir.name)} --> {data.shape}")
                     np.save(Path(save_path, f"{var}_{float(time_dir.name)}.npy"), data) # We are saving it in float because we want to keep things consistent.
                 except Exception as e:
                     openfoam_config.logger.exception(f"Error in parsing the data to numpy: {e}")
@@ -252,7 +270,7 @@ class OpenfoamUtils:
     def run_solver(self, start_time:int|float=None,
                    end_time:int|float=None,
                    write_interval:int|float=None,
-                   save_to_numpy:bool=False,
+                   save_to_numpy:bool=True,
                    del_dirs:bool=False) -> bool:
         '''
         This method aims at running the CFD solver of your interest. 
@@ -338,11 +356,16 @@ class OpenfoamUtils:
         self.openfoam_config.logger.debug(f"\n Solver Output: {solver_result}\n")
 
         if save_to_numpy:
-            self.parse_to_numpy(self.openfoam_config, del_dirs=del_dirs)
+            self.parse_to_numpy(openfoam_config=self.openfoam_config, 
+                                start_time=start_time, 
+                                end_time=end_time,
+                                write_interval=write_interval,
+                                del_dirs=del_dirs)
 
         return True
 
 if __name__ == "__main__":
     openfoam_config = OpenfoamConfig()
     openfoam_utils = OpenfoamUtils(openfoam_config)
-    openfoam_utils.run_solver(start_time=10, end_time=20, write_interval=0.01,save_to_numpy=False, del_dirs=False)
+    openfoam_utils.run_solver(start_time=10.51, end_time=20.0, write_interval=0.01,save_to_numpy=True, del_dirs=False)
+    # openfoam_utils.parse_to_numpy(openfoam_config, start_time=10.51, end_time=20.0)

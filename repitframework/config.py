@@ -163,7 +163,7 @@ class TrainingConfig(BaseConfig):
 		self.training_end_time = 10.02
 		self.prediction_start_time = 10.02
 		self.prediction_end_time = 20.0
-		self.bc_type:str = None # either None or "ground_truth"
+		self.bc_type:str = "ground_truth" # either None or "ground_truth"
 
 		self.log_file: Path = Path("Training.log")
 		self.logger = self.setup_logger("TrainingLogger",self.log_file)
@@ -216,14 +216,30 @@ class TrainingConfig(BaseConfig):
 		uy_matrix = np.pad(uy_matrix, ((1,1),(1,1)), mode="constant", constant_values=0)
 		t_matrix = np.pad(t_matrix, ((1,1),(1,1)), mode="constant", constant_values=0)
 
-		right_wall_temperature = 307.75
-		left_wall_temperature = 288.15
+		'''
+		Applying the boundary conditions:
+		While reshaping the data, we are using order="F" to try to keep the data in the same order as OpenFOAM.
+		But the numpy puts lower wall at the top and upper wall at the bottom. Hence, we need to flip.
+		Naturally: 
+			- Top wall is the cold wall
+			- Bottom wall is the hot wall
 
-		# Applying the boundary conditions
-		t_matrix[:, 0] = left_wall_temperature
-		t_matrix[:, -1] = right_wall_temperature
-		t_matrix[0, :] = t_matrix[1,:]
-		t_matrix[-1, :] = t_matrix[-2,:]
+		Numpy:
+			- Top wall is the hot wall
+			- Bottom wall is the cold wall
+
+		But if order="C":
+			- Left wall is the hot wall
+			- Right wall is the cold wall
+		'''
+
+		top_wall_temperature = 307.75
+		bottom_wall_temperature = 288.15
+
+		t_matrix[:, 0] = t_matrix[:, 1]
+		t_matrix[:, -1] = t_matrix[:, -2]
+		t_matrix[0, :] = top_wall_temperature
+		t_matrix[-1, :] = bottom_wall_temperature
 
 		data_list[vars_list.index("U_x")] = ux_matrix
 		data_list[vars_list.index("U_y")] = uy_matrix

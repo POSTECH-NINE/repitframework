@@ -2,6 +2,7 @@
 repitframework/Assets/
 repitframework/logs/
 repitframework/ModelDump/
+repitframework/plots/*
 *.pyc
 .vscode/
 **/__pycache__

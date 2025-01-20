@@ -139,7 +139,7 @@ def visualize_output(base_config:BaseConfig,
 	num_subplots = len(data_dict)
 	fig, ax = plt.subplots(1, num_subplots, figsize=(5*num_subplots, 5))
 	for i,(key,value) in enumerate(data_dict.items()):
-		value = ax[i].imshow(value, cmap="coolwarm")
+		value = ax[i].imshow(value)
 		fig.colorbar(value, ax=ax[i])
 		ax[i].set_title(key)
 	fig.tight_layout()
@@ -162,6 +162,7 @@ def make_animation(base_config:BaseConfig,
 					np_data_dir:Path=None, 
 					data_vars:list=None, 
 					save_name:Path=None,
+					plot_pred_gaps:bool=False,
 					set_fps:int=1)->bool:
 	'''
 	This function is used to make an animation of the output of the simulation.
@@ -172,29 +173,47 @@ def make_animation(base_config:BaseConfig,
 	save_path = save_dir / f"{save_name}.gif" if save_name else save_dir / "output.gif"
 
 	images_list = []
+	pred_time_list = [] if is_ground_truth else timestamps
+	if plot_pred_gaps:
+		min_time = min(timestamps)
+		max_time = max(timestamps)
+		interval_time = round(timestamps[1] - timestamps[0], base_config.round_to)
+		timestamps = np.round(np.arange(min_time, max_time, interval_time), base_config.round_to)
+		
 	for timestamp in timestamps:
-		images_list.append(visualize_output(base_config=base_config,
-											timestamp=timestamp,
-											np_data_dir=np_data_dir,
-											data_vars=data_vars,
-											mode="rgb_array",
-											is_ground_truth=is_ground_truth))
+		if timestamp in pred_time_list:
+			images_list.append(visualize_output(base_config=base_config,
+												timestamp=timestamp,
+												np_data_dir=np_data_dir,
+												data_vars=data_vars,
+												mode="rgb_array",
+												is_ground_truth=False))
+		else:
+			images_list.append(visualize_output(base_config=base_config,
+												timestamp=timestamp,
+												np_data_dir=np_data_dir,
+												data_vars=data_vars,
+												mode="rgb_array",
+												is_ground_truth=True))
 	imageio.mimsave(save_path, images_list, fps=set_fps, loop=0)
 	return True
 
 if __name__ == "__main__":
 
 	base_config = BaseConfig()
+	full_time_list = np.round(np.arange(10.01, 20.0, 0.01),2)
 	with open("/home/shilaj/repitframework/repitframework/ModelDump/natural_convection/prediction_metrics.json","r") as f:
 		metrics = json.load(f)
 	time_list = metrics["Running Time"]
-	print(len(time_list))
 	make_animation(base_config=base_config,
 					timestamps=time_list,
 					is_ground_truth=False,
-					set_fps=5,
-					save_name="prediction_simulation_test")
+					set_fps=50,
+					plot_pred_gaps=False,
+					save_name="prediction_simulation",
+					np_data_dir="/home/shilaj/repitframework/repitframework/Assets/natural_convection",)
 	# visualize_output(base_config=base_config,
-	# 				timestamp=10.04,
-	# 				is_ground_truth=False,
-	# 				save_name="predicted")
+	# 				timestamp=10.51,
+	# 				is_ground_truth=True,
+	# 				save_name="true",
+	# 				np_data_dir="/home/shilaj/repitframework/repitframework/Assets/natural_convection_backup",)

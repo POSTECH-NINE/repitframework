@@ -5,7 +5,7 @@ import re
 import numpy as np
 
 from repitframework.config import OpenfoamConfig
-from .utils import OpenfoamUtils
+from repitframework.OpenFOAM.utils import OpenfoamUtils
 
 def parse_numpy(data: np.ndarray) -> str:
 	"""
@@ -34,9 +34,7 @@ def parse_numpy(data: np.ndarray) -> str:
 		elif data.shape[-1] == 2: # 2D array
 			# For the vector field, OpenFOAM requires the data to be in the form of (x y z) for each row.
 			# So, if we have a 2D array of shape (n, 2), we need to add a column of zeros to make it (n, 3).
-			zero_columns = np.zeros((data.shape[0], 1))
-			data = np.concatenate((data, zero_columns), axis=1)
-			lines = ['(' + ' '.join(map(str, row)) + ')' for row in data]
+			lines = ['(' + ' '.join(map(str, row)) + ' 0)' for row in data]
 			return '\n'.join(lines)
 		else: # 3D array
 			lines = ['(' + ' '.join(map(str, row)) + ')' for row in data]
@@ -44,6 +42,79 @@ def parse_numpy(data: np.ndarray) -> str:
 	else:
 		raise ValueError("Data shape not supported. Aborting conversion from numpy to OpenFOAM.")
 
+def manage_time_uniform(solver_dir:Path, latestML_time:float) -> str:
+	'''
+	Changing time folder
+	---------------------
+	command::
+
+		foamDictionary -case solver_dir -entry value -set latestML_time latestCFD_time/uniform/time
+
+		foamDictionary -case solver_dir -entry name -set '"latestML_time"' latestCFD_time/0/time
+
+		foamDictionary -case solver_dir -entry index -set latestML_time_without_decimal latestCFD_time/constant/time
+
+	It also replaces the location values in every files inside the time directory. 
+	Files like U, p, T, uniform/time, etc.
+	'''
+	# Because in the directory, other files are also present which still have the old time values.
+	files_list = []
+	time_dir = Path.joinpath(solver_dir, f"{latestML_time}")
+	for file in time_dir.iterdir():
+		if file.is_file():
+			files_list.append(file)
+
+	uniform_time_dir = Path.joinpath(solver_dir, f"{latestML_time}/uniform/time")
+	if uniform_time_dir.exists(): files_list.append(uniform_time_dir)
+
+	for file in files_list:
+		if file == uniform_time_dir:
+			replace_string = "/uniform"
+		else:
+			replace_string = ""
+
+		with open(file, "r") as f:
+			data = f.read()
+			foam_data = re.sub(r'(location\s*)"([^"]*)"',rf'\1"{latestML_time}{replace_string}"',data)
+		with open(file, "w") as f:
+			f.write(foam_data)
+
+	command_to_change_time_value = ["foamDictionary", 
+								 "-case", 
+								 solver_dir, 
+								 "-entry", 
+								 "value", 
+								 "-set", 
+								 f"{latestML_time}", 
+								 f"{latestML_time}/uniform/time"]
+	
+	command_to_change_time_name = ["foamDictionary",
+								 "-case",
+								 solver_dir,
+								 "-entry",
+								 "name",
+								 "-set",
+								 f'"{latestML_time}"',
+								 f"{latestML_time}/uniform/time"]
+	
+	latestML_time_without_decimal = int(str(latestML_time).replace(".",""))
+	if latestML_time.is_integer(): latestML_time_without_decimal = int(f"{latestML_time}00")
+	command_to_change_time_index = ["foamDictionary",
+								 "-case",
+								 solver_dir,
+								 "-entry",
+								 "index",
+								 "-set",
+								 f"{latestML_time_without_decimal}",
+								 f"{latestML_time}/uniform/time"]
+	
+	output_value = subprocess.run(command_to_change_time_value, check=True, capture_output=True, text=True)
+	output_name = subprocess.run(command_to_change_time_name, check=True, capture_output=True, text=True)
+	output_index = subprocess.run(command_to_change_time_index, check=True, capture_output=True, text=True)
+
+	output_string = f"{output_value.stdout}\n{output_name.stdout}\n{output_index.stdout}"
+
+	return output_string
 
 def numpyToFoam(openfoam_config:OpenfoamConfig, 
 				latestML_time:float,
@@ -51,7 +122,7 @@ def numpyToFoam(openfoam_config:OpenfoamConfig,
 				variables:list=None,
 				solver_dir:Path=None,
 				assets_path:Path=None,
-				is_ground_truth:bool=False) -> bool:
+				is_ground_truth:bool=False) -> str:
 	"""
 	This function takes a numpy file and writes it to an OpenFOAM file.
 
@@ -103,6 +174,7 @@ def numpyToFoam(openfoam_config:OpenfoamConfig,
 
 	latestCFD_time_dir = Path.joinpath(solver_dir,f"{latestCFD_time}") # time directory for current time
 
+
 	# Because, in openfoam if the time directory is float at the terminal values like; 11.0, 12.0, 13.0 are converted to 11, 12, 13.
 	ml_dir_time_name = int(latestML_time) if latestML_time.is_integer() else latestML_time
 	latestML_time_dir  = Path.joinpath(solver_dir, f"{ml_dir_time_name}") # time directory for next time (latestCFD_time + 1)
@@ -110,14 +182,23 @@ def numpyToFoam(openfoam_config:OpenfoamConfig,
 	# copy the contents of latest CFD simulation time to the latest ML simulation time.
 	if not latestML_time_dir.exists(): subprocess.run(["cp", "-r", latestCFD_time_dir, latestML_time_dir], check=True)
 
+	output_string = manage_time_uniform(solver_dir, ml_dir_time_name)
+
 	for variable in variables:
 		numpy_file_name = f"{variable}_{latestML_time}.npy" if is_ground_truth else f"{variable}_{latestML_time}_predicted.npy"
 		openfoam_var_path = Path.joinpath(latestML_time_dir, f"{variable}") # openfoam variable path: where we write the numpy data    
 		numpy_file_path =   Path.joinpath(assets_path, numpy_file_name) # numpy file path: where the numpy data is stored
+
 		# numpy file processing:
 		data = np.load(numpy_file_path)
-		data_str = "(\n" + parse_numpy(data) + "\n)\n;" # convert numpy data to OpenFOAM format
 
+		if variable == "T":
+			data = np.round(data, 9)
+		else:
+			data = np.round(data, 18)
+
+		data_str = "(\n" + parse_numpy(data) + "\n)\n;" # convert numpy data to OpenFOAM format
+		
 		with open(openfoam_var_path, "r") as file:
 			foam_data_temp = file.read()
 			foam_data = re.sub(r'(location\s*)"([^"]*)"',rf'\1"{latestML_time}"',foam_data_temp) # update the location to the next time step
@@ -125,9 +206,10 @@ def numpyToFoam(openfoam_config:OpenfoamConfig,
 
 		with open(openfoam_var_path, "w") as file:
 			file.write(foam_data)
-	return True    
+	return output_string   
 
 	
 if __name__ == "__main__":
 	openfoam_config = OpenfoamConfig()
-	numpyToFoam(openfoam_config, latestCFD_time=10.0, latestML_time=20.0, is_ground_truth=True)
+	output_string = numpyToFoam(openfoam_config, latestCFD_time=10.0, latestML_time=10.51, is_ground_truth=True)
+	print(output_string)

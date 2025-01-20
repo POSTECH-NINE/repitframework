@@ -9,7 +9,7 @@ from torch import Tensor,mean, std
 from repitframework.config import TrainingConfig
 
 class FVMNDataset(Dataset):
-    def __init__(self, training_config:TrainingConfig, data_path:Path=None, start_time:float=None, 
+    def __init__(self, training_config:TrainingConfig, first_training:bool, data_path:Path=None, start_time:float=None, 
                  end_time:float=None, time_step:float=None, vars_list:list=None):
         '''
         Keep in mind
@@ -40,10 +40,12 @@ class FVMNDataset(Dataset):
         '''
         super().__init__()
         self.training_config = training_config
+        self.first_training = first_training
         self.start_time = self.training_config.training_start_time if not start_time else start_time
         self.end_time = self.training_config.training_end_time if not end_time else end_time
         self.vars: list = self.training_config.extend_variables() if not vars_list else vars_list
         self.time_step = self.training_config.write_interval if not time_step else time_step   
+
 
         self.time_list = self._generate_intervals()
         self.grid_x = self.training_config.grid_x
@@ -249,11 +251,11 @@ class FVMNDataset(Dataset):
     
     @staticmethod
     def denormalize(data:Tensor, mean_, std_)->Tensor:
-        if data.shape[-1] == len(mean_):
-            return data * std_ + mean_
-        else:
-            skip_steps = len(mean_) // data.shape[-1]
-            return data * std_[::skip_steps] + mean_[::skip_steps]
+        if isinstance(data, Tensor): data = data.cpu().numpy()
+        if data.shape[-1] == len(mean_): 
+            return Tensor(data * std_ + mean_)
+        skip_steps = len(mean_) // data.shape[-1]
+        return Tensor(data * std_[::skip_steps] + mean_[::skip_steps])
     
     def _prepare_inputs_and_labels(self) -> Tuple[Tensor, Tensor]:
         inputs, labels = [], []
@@ -265,12 +267,13 @@ class FVMNDataset(Dataset):
         normalized_inputs,input_MEAN, input_STD = self.normalize(inputs)
         normalized_labels,label_MEAN, label_STD = self.normalize(labels)
 
-        # Saving the mean and std for denormalization while predicting.
-        metrics_save_path = self.training_config.model_dir / "denorm_metrics.json"
-        # While preparing for new inputs and labels, if this file already exists, it will be overwritten.
-        with open(metrics_save_path, "w") as f:
-            json.dump({"input_MEAN": input_MEAN.tolist(), "input_STD": input_STD.tolist(), 
-                       "label_MEAN": label_MEAN.tolist(), "label_STD": label_STD.tolist()}, f, indent=4)
+        if self.first_training:
+            # Saving the mean and std for denormalization while predicting.
+            metrics_save_path = self.training_config.model_dir / "denorm_metrics.json"
+            # While preparing for new inputs and labels, if this file already exists, it will be overwritten.
+            with open(metrics_save_path, "w") as f:
+                json.dump({"input_MEAN": input_MEAN.tolist(), "input_STD": input_STD.tolist(), 
+                        "label_MEAN": label_MEAN.tolist(), "label_STD": label_STD.tolist()}, f, indent=4)
 
         return Tensor(normalized_inputs), Tensor(normalized_labels)
     
@@ -294,7 +297,7 @@ if __name__ == "__main__":
     start_time = 10.0
     end_time = 10.02
     time_step = 0.01
-    data = FVMNDataset(training_config,data_path, start_time, end_time, time_step)
+    data = FVMNDataset(training_config,True, data_path, start_time, end_time, time_step)
     inputs , labels = data._prepare_inputs_and_labels()
     print(inputs.shape, labels.shape, len(data))
 
