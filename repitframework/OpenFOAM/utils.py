@@ -87,6 +87,9 @@ class OpenfoamUtils:
     
     @staticmethod
     def generate_intervals(start_time:int|float, end_time:int|float, time_step:int|float, round_to:int=2) -> list:
+        '''
+        np.arange gave inconsistent results. So, we are using this method to generate the time intervals.
+        '''
         time_list = []
         time_list.append(round(start_time, round_to))
         running_time = start_time
@@ -166,10 +169,10 @@ class OpenfoamUtils:
             for var in variables:
                 try:
                     data = Ofpp.parse_internal_field(Path(time_dir, var))
-                    if var == "T":
-                        data = np.round(data, 9)
-                    else:
-                        data = np.round(data, 18)
+                    # if var == "T":
+                    #     data = np.round(data, 9)
+                    # else:
+                    #     data = np.round(data, 18)
                         
                     openfoam_config.logger.debug(f"Data parsed to numpy:{var}_{float(time_dir.name)} --> {data.shape}")
                     np.save(Path(save_path, f"{var}_{float(time_dir.name)}.npy"), data) # We are saving it in float because we want to keep things consistent.
@@ -367,5 +370,5 @@ class OpenfoamUtils:
 if __name__ == "__main__":
     openfoam_config = OpenfoamConfig()
     openfoam_utils = OpenfoamUtils(openfoam_config)
-    openfoam_utils.run_solver(start_time=10.51, end_time=20.0, write_interval=0.01,save_to_numpy=True, del_dirs=False)
+    openfoam_utils.run_solver(start_time=10.0, end_time=20.0, write_interval=0.01,save_to_numpy=True, del_dirs=False)
     # openfoam_utils.parse_to_numpy(openfoam_config, start_time=10.51, end_time=20.0)

@@ -5,7 +5,7 @@ import re
 import numpy as np
 
 from repitframework.config import OpenfoamConfig
-from repitframework.OpenFOAM.utils import OpenfoamUtils
+from repitframework.OpenFOAM import OpenfoamUtils
 
 def parse_numpy(data: np.ndarray) -> str:
 	"""
@@ -23,7 +23,7 @@ def parse_numpy(data: np.ndarray) -> str:
 	
 	Example
 	-------
-		"(1 2 3)\\n(4 5 6)\\n(7 8 9)"
+		"(1 2 3)\n(4 5 6)\n(7 8 9)"
 	"""
 	if data.ndim == 1:
 		# 1D array of scalars
@@ -192,10 +192,10 @@ def numpyToFoam(openfoam_config:OpenfoamConfig,
 		# numpy file processing:
 		data = np.load(numpy_file_path)
 
-		if variable == "T":
-			data = np.round(data, 9)
-		else:
-			data = np.round(data, 18)
+		# if variable == "T":
+		# 	data = np.round(data, 9)
+		# else:
+		# 	data = np.round(data, 18)
 
 		data_str = "(\n" + parse_numpy(data) + "\n)\n;" # convert numpy data to OpenFOAM format
 		
@@ -211,5 +211,5 @@ def numpyToFoam(openfoam_config:OpenfoamConfig,
 	
 if __name__ == "__main__":
 	openfoam_config = OpenfoamConfig()
-	output_string = numpyToFoam(openfoam_config, latestCFD_time=10.0, latestML_time=10.51, is_ground_truth=True)
+	output_string = numpyToFoam(openfoam_config, latestCFD_time=10.0, latestML_time=10.02, is_ground_truth=True)
 	print(output_string)

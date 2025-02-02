@@ -7,6 +7,7 @@ import numpy as np
 from torch import Tensor,mean, std
 
 from repitframework.config import TrainingConfig
+from repitframework.Metrics.ResidualNaturalConvection import residual_mass
 
 class FVMNDataset(Dataset):
     def __init__(self, training_config:TrainingConfig, first_training:bool, data_path:Path=None, start_time:float=None, 
@@ -71,6 +72,16 @@ class FVMNDataset(Dataset):
                 if not (self.data_path / f"{var}_{round(time, self.training_config.round_to)}.npy").exists():
                     return False
         return True
+    
+    def _calculate_residual(self, time) -> float:
+        '''
+        Calculate the residual mass.
+        '''
+        data_path = self.data_path / f"U_{time}.npy"
+        vel_data = self.parse_numpy(self.training_config, data_path)
+        ux_matrix = vel_data[:,:,0]
+        uy_matrix = vel_data[:,:,1]
+        return residual_mass(ux_matrix, uy_matrix)
     
     @staticmethod
     def parse_numpy(training_config:TrainingConfig, data_path:Path) -> np.ndarray:
@@ -269,11 +280,13 @@ class FVMNDataset(Dataset):
 
         if self.first_training:
             # Saving the mean and std for denormalization while predicting.
+            true_residual_mass = self._calculate_residual(self.end_time)
             metrics_save_path = self.training_config.model_dir / "denorm_metrics.json"
             # While preparing for new inputs and labels, if this file already exists, it will be overwritten.
             with open(metrics_save_path, "w") as f:
                 json.dump({"input_MEAN": input_MEAN.tolist(), "input_STD": input_STD.tolist(), 
-                        "label_MEAN": label_MEAN.tolist(), "label_STD": label_STD.tolist()}, f, indent=4)
+                        "label_MEAN": label_MEAN.tolist(), "label_STD": label_STD.tolist(),
+                        "true_residual_mass":true_residual_mass}, f, indent=4)
 
         return Tensor(normalized_inputs), Tensor(normalized_labels)
     

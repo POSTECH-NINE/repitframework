@@ -3,6 +3,7 @@ import warnings
 import imageio
 from typing import Dict
 import json
+from collections import defaultdict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -198,6 +199,145 @@ def make_animation(base_config:BaseConfig,
 	imageio.mimsave(save_path, images_list, fps=set_fps, loop=0)
 	return True
 
+def get_probes_data(pred_time_list:list[int|float],
+					np_data_dir:Path=None):
+	'''
+	This function is used to perform quantitative analysis on the output of the simulation.
+
+	Args
+	----
+	time_list: list[int|float]
+		It must be predicted time list. If there is no prediction, then it should be None.
+	'''
+	backup_dir = Path(str(np_data_dir).replace("natural_convection","natural_convection_backup"))
+	assert backup_dir.exists(), f"Backup directory {backup_dir} does not exist."
+	assert np_data_dir.exists(), f"Prediction directory {np_data_dir} does not exist."
+
+
+	probes_data = {"T": {"ground_truth": defaultdict(list), "predicted": defaultdict(list)},
+				   "U_x": {"ground_truth": defaultdict(list), "predicted": defaultdict(list)},
+				   "U_y": {"ground_truth": defaultdict(list), "predicted": defaultdict(list)}}
+
+	# Defining coordinates for probes: 
+	probes_labels = {"t1":(1,100), "t2":(2,100), "t3":(3,100), "b1":(-2,100), "b2":(-3,100), "b3":(-4,100)}
+
+	min_time = min(pred_time_list) if pred_time_list else 10.01
+	max_time = max(pred_time_list) if pred_time_list else 20.0
+	interval_time = round(0.01, base_config.round_to)
+	timestamps = np.round(np.arange(min_time, max_time, interval_time), base_config.round_to)
+
+	for timestamp in timestamps:
+		t_data_ground_truth = np.load(backup_dir / f"T_{timestamp}.npy")
+		U_data_ground_truth = np.load(backup_dir / f"U_{timestamp}.npy")
+
+		t_data_ground_truth = np.flipud(t_data_ground_truth.reshape(200,200,order="C"))
+		ux_data_ground_truth = np.flipud(U_data_ground_truth[:,0].reshape(200,200,order="C"))
+		uy_data_ground_truth = np.flipud(U_data_ground_truth[:,1].reshape(200,200,order="C"))
+
+		if timestamp in pred_time_list:
+			t_data_predicted = np.load(np_data_dir / f"T_{timestamp}_predicted.npy")
+			U_data_predicted = np.load(np_data_dir / f"U_{timestamp}_predicted.npy")
+		else:
+			t_data_predicted = np.load(np_data_dir / f"T_{timestamp}.npy")
+			U_data_predicted = np.load(np_data_dir / f"U_{timestamp}.npy")
+
+		t_data_predicted = np.flipud(t_data_predicted.reshape(200,200,order="C"))
+		ux_data_predicted = np.flipud(U_data_predicted[:,0].reshape(200,200,order="C"))
+		uy_data_predicted = np.flipud(U_data_predicted[:,1].reshape(200,200,order="C"))
+
+		for probe_location in probes_labels.keys():
+			probes_data["T"]["ground_truth"][probe_location].append(t_data_ground_truth[probes_labels[probe_location]].item())
+			probes_data["T"]["predicted"][probe_location].append(t_data_predicted[probes_labels[probe_location]].item())
+
+			probes_data["U_x"]["ground_truth"][probe_location].append(ux_data_ground_truth[probes_labels[probe_location]].item())
+			probes_data["U_x"]["predicted"][probe_location].append(ux_data_predicted[probes_labels[probe_location]].item())
+
+			probes_data["U_y"]["ground_truth"][probe_location].append(uy_data_ground_truth[probes_labels[probe_location]].item())
+			probes_data["U_y"]["predicted"][probe_location].append(uy_data_predicted[probes_labels[probe_location]].item())
+		
+	return probes_data
+
+def quantitative_anlysis(pred_time_list:list[int|float],
+						np_data_dir:Path=None,
+						save_name:str= "velocity-x (m/s)"):
+	'''
+	This function is used to perform quantitative analysis on the output of the simulation.
+	save_name: str
+		The name of the feautre you want to select: "velocity-x (m/s)", "velocity-y (m/s)", "temperature (K)"
+	'''
+	probes_data = get_probes_data(pred_time_list=pred_time_list, np_data_dir=np_data_dir)
+	with open(np_data_dir / "probes_data.json", "w") as f:
+		json.dump(probes_data, f, indent=4)
+	
+	# fig, ax = plt.subplots(2, 3, figsize=(30,10), sharex=True)
+	# for i, feature in enumerate(probes_data.keys()):
+	# 	ground_truth, predicted = probes_data[feature]
+	# 	for probe_location in ground_truth.keys():
+	# 		match probe_location:
+	# 			case "l1":
+	# 				ax[0,i].plot(ground_truth[probe_location], label="L1", linestyle="-", color="red")
+	# 				ax[0,i].plot(predicted[probe_location], label="L1", linestyle="--", color="red")
+	# 			case "l2":
+	# 				ax[0,i].plot(ground_truth[probe_location], label="L2", linestyle="-", color="green")
+	# 				ax[0,i].plot(predicted[probe_location], label="L2", linestyle="--", color="green")
+	# 			case "l3":
+	# 				ax[0,i].plot(ground_truth[probe_location], label="L3", linestyle="-", color="blue")
+	# 				ax[0,i].plot(predicted[probe_location], label="L3", linestyle="--", color="blue")
+	# 			case "r1":
+	# 				ax[1,i].plot(ground_truth[probe_location], label="R1", linestyle="-", color="red")
+	# 				ax[1,i].plot(predicted[probe_location], label="R1", linestyle="--", color="red")
+	# 			case "r2":
+	# 				ax[1,i].plot(ground_truth[probe_location], label="R2", linestyle="-", color="green")
+	# 				ax[1,i].plot(predicted[probe_location], label="R2", linestyle="--", color="green")
+	# 			case "r3":
+	# 				ax[1,i].plot(ground_truth[probe_location], label="R3", linestyle="-", color="blue")
+	# 				ax[1,i].plot(predicted[probe_location], label="R3", linestyle="--", color="blue")
+
+	fig, ax = plt.subplots(2, 1, figsize=(15,10))
+	plt.rcParams['axes.titlesize'] = 22           # Title font size
+	plt.rcParams['axes.labelsize'] = 20           # x and y label font size
+	plt.rcParams['xtick.labelsize'] = 18          # x tick label size
+	plt.rcParams['ytick.labelsize'] = 18          # y tick label size
+	match save_name:
+		case "velocity-x (m/s)"|"U_x":
+			ground_truth_data = probes_data["U_x"]["ground_truth"]
+			predicted_data = probes_data["U_x"]["predicted"]
+		case "velocity-y (m/s)"|"U_y":
+			ground_truth_data = probes_data["U_y"]["ground_truth"]
+			predicted_data = probes_data["U_y"]["predicted"]
+		case "temperature (K)"|"T":
+			ground_truth_data = probes_data["T"]["ground_truth"]
+			predicted_data = probes_data["T"]["predicted"]
+
+	ax[0].plot(ground_truth_data["t1"], label="T1", linestyle="-", color="red")
+	ax[0].plot(ground_truth_data["t2"], label="T2", linestyle="-", color="green")
+	ax[0].plot(ground_truth_data["t3"], label="T3", linestyle="-", color="blue")
+	ax[0].plot(predicted_data["t1"], linestyle="--", color="red")
+	ax[0].plot(predicted_data["t2"], linestyle="--", color="green")
+	ax[0].plot(predicted_data["t3"], linestyle="--", color="blue")
+	ax[0].legend()
+	ax[0].grid()
+	ax[0].set_title("Top Wall")
+	ax[0].set_xlabel("Time (s)")
+	ax[0].set_ylabel(save_name)
+	ax[0].margins(x=0)
+	
+	ax[1].plot(ground_truth_data["b1"], label="B1", linestyle="-", color="red")
+	ax[1].plot(ground_truth_data["b2"], label="B2", linestyle="-", color="green")
+	ax[1].plot(ground_truth_data["b3"], label="B3", linestyle="-", color="blue")
+	ax[1].plot(predicted_data["b1"], linestyle="--", color="red")
+	ax[1].plot(predicted_data["b2"], linestyle="--", color="green")
+	ax[1].plot(predicted_data["b3"], linestyle="--", color="blue")
+	ax[1].legend()
+	ax[1].grid()
+	ax[1].set_title("Bottom Wall")
+	ax[1].set_xlabel("Time (s)")
+	ax[1].set_ylabel(save_name)
+	ax[1].margins(x=0)
+
+	fig.tight_layout()
+	fig.savefig(base_config.root_dir / "plots" / np_data_dir.name / f"{save_name.split(" ")[0]}_analysis.png")
+
 if __name__ == "__main__":
 
 	base_config = BaseConfig()
@@ -205,13 +345,17 @@ if __name__ == "__main__":
 	with open("/home/shilaj/repitframework/repitframework/ModelDump/natural_convection/prediction_metrics.json","r") as f:
 		metrics = json.load(f)
 	time_list = metrics["Running Time"]
-	make_animation(base_config=base_config,
-					timestamps=time_list,
-					is_ground_truth=False,
-					set_fps=50,
-					plot_pred_gaps=False,
-					save_name="prediction_simulation",
-					np_data_dir="/home/shilaj/repitframework/repitframework/Assets/natural_convection",)
+	# make_animation(base_config=base_config,
+	# 				timestamps=time_list,
+	# 				is_ground_truth=False,
+	# 				set_fps=50,
+	# 				plot_pred_gaps=True,
+	# 				save_name="prediction_simulation_5",
+	# 				np_data_dir="/home/shilaj/repitframework/repitframework/Assets/natural_convection",)
+	save_name_list = ["velocity-x (m/s)", "velocity-y (m/s)", "temperature (K)"]
+	quantitative_anlysis(pred_time_list=time_list,
+						np_data_dir=Path("/home/shilaj/repitframework/repitframework/Assets/natural_convection"),
+						save_name=save_name_list[0])
 	# visualize_output(base_config=base_config,
 	# 				timestamp=10.51,
 	# 				is_ground_truth=True,

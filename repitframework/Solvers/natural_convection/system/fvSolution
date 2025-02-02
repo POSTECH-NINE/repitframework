@@ -25,7 +25,7 @@ solvers
     {
         solver          PCG;
         preconditioner  DIC;
-        tolerance       1e-12;
+        tolerance       1e-18;
         relTol          0.01;
     }
 
@@ -39,8 +39,8 @@ solvers
     {
         solver          PBiCGStab;
         preconditioner  DILU;
-        tolerance       1e-12;
-        relTol          0.1;
+        tolerance       1e-18;
+        relTol          0.001;
     }
 
     "(U|e|h|k|epsilon)Final"
@@ -53,8 +53,8 @@ solvers
 PIMPLE
 {
     momentumPredictor yes;
-    nOuterCorrectors 1;
-    nCorrectors     2;
+    nOuterCorrectors 3;
+    nCorrectors     4;
     nNonOrthogonalCorrectors 0;
 
     pRefCell        0;
