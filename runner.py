@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader, Dataset, Subset
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
-from repitframework.Dataset.fvmn import FVMNDataset
+from repitframework.Dataset.fvmn import FVMNDataset, PhiDataset
 from repitframework.Models.FVMN.fvmn import FVMNetwork
 from repitframework.config import TrainingConfig, OpenfoamConfig, BaseConfig
 from repitframework.OpenFOAM import OpenfoamUtils
@@ -26,28 +26,37 @@ from repitframework.Metrics.ResidualNaturalConvection import (
 
 torch.set_default_dtype(torch.float64)
 
-def get_dataloader(training_config:TrainingConfig, 
-				   dataset:Dataset, 
-				   batch_size=None)->Tuple[DataLoader, DataLoader]:
+def freeze_layers(model:torch.nn.Module, num_layers:int):
 	'''
-	Get the dataloaders for training and validation.
+	Freeze the layers of the sub-network.
 	'''
-	batch_size = batch_size if batch_size else training_config.batch_size
+	for _, sub_network in model.networks.items():
+		layers = list(sub_network.children())
+		for layer in layers[:-num_layers]:
+			for param in layer.parameters():
+				param.requires_grad = False
 
-	# Indices for splitting
-	data_size = len(dataset)
-	indices = list(range(data_size))
-	train_indices, val_indices = train_test_split(indices, test_size=0.2, random_state=1004)
+def get_dataloader(training_config, dataset, batch_size=None):
+    """
+    Returns DataLoaders that provide (x, y) batches for training and validation.
+    
+    If `dataset_phi` is provided, it ensures `x` and `y` batches are aligned correctly.
+    """
+    batch_size = batch_size if batch_size else training_config.batch_size
 
-	# Subsets
-	train_dataset = Subset(dataset, train_indices)
-	val_dataset = Subset(dataset, val_indices)
+    # Split indices for train/validation
+    data_size = len(dataset)
+    indices = list(range(data_size))
+    train_indices, val_indices = train_test_split(indices, test_size=0.2, random_state=1004)
 
-	# Dataloaders
-	train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True,drop_last=True)
-	val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=False)
+    train_dataset = Subset(dataset, train_indices)
+    val_dataset = Subset(dataset, val_indices)
 
-	return train_loader, val_loader
+    # Create DataLoaders for X (dataset)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=False)
+
+    return train_loader, val_loader
 
 class Trainer:
 	def __init__(self, training_config:TrainingConfig, 
@@ -81,7 +90,9 @@ class Trainer:
 
 	def train(self, train_loader:DataLoader, 
 			  val_loader:DataLoader, 
-			  epochs) -> bool:
+			  epochs, freeze:bool) -> bool:
+		
+		if freeze: freeze_layers(self.model, num_layers=2)
 		for epoch in tqdm(range(epochs), desc="Epochs", leave=False):
 			self.model.train()  # Set the model to training mode
 			train_loss = 0.0
@@ -159,13 +170,19 @@ class Trainer:
 	
 	def train_on_residual(self, train_loader:DataLoader,
 						  val_loader:DataLoader):
-		epoch = 0
-		while self.relative_residual_mass > 2.0:
+		epoch = 1
+		val_loss = self.validate(val_loader)
+		while val_loss > 5e-2:
 			self.model.train()  # Set the model to training mode
 			train_loss = 0.0
 			for x_batch, y_batch in train_loader:
 				x_batch = x_batch.to(self.device) 
 				y_batch = y_batch.to(self.device)
+
+				# Labels: 
+				y_T = y_batch[:,self.t_index:self.t_index+1]
+				y_ux = y_batch[:, self.ux_index:self.ux_index+1]
+				y_uy = y_batch[:, self.uy_index:self.uy_index+1]
 
 				# Forward pass: Hard coded
 				predictions = self.model(x_batch)
@@ -173,10 +190,10 @@ class Trainer:
 				pred_ux = predictions["U_x"]
 				pred_uy = predictions["U_y"]
 
-				loss_1 = residual_mass(pred_ux, pred_uy)
-				loss_2 = residual_momentum(pred_ux, self.ux_matrix_prev, pred_uy, self.uy_matrix)
-				loss_3 = residual_heat(pred_ux, pred_uy, pred_T, self.t_matrix_prev)
-				loss = loss_1 + loss_2 + loss_3
+				loss_T = self.loss_fn(pred_T, y_T)
+				loss_ux = self.loss_fn(pred_ux, y_ux)
+				loss_uy = self.loss_fn(pred_uy, y_uy)
+				loss = loss_T + loss_ux + loss_uy
 
 				# Backpropagation
 				self.optimizer.zero_grad()
@@ -186,24 +203,28 @@ class Trainer:
 				train_loss += loss.item()*x_batch.size(0)
 			
 			train_loss /= len(train_loader.dataset)
-			epoch += 1
-			self.training_config.log_metrics(key="Epoch", value=epoch, metrics_type="training")
-			self.training_config.log_metrics(key="Training Loss", value=train_loss, metrics_type="training")
-			training_config.logger.info(f"Epoch {epoch}, Loss: {train_loss:.4f}")
 
-			if loss < self.best_val_accuracy:
-				self.best_val_accuracy = loss
+			self.training_config.log_metrics(key="Epoch", value=epoch+1, metrics_type="training")
+			self.training_config.log_metrics(key="Training Loss", value=train_loss, metrics_type="training")
+			training_config.logger.info(f"Epoch {epoch + 1}, Loss: {train_loss:.4f}")
+
+			# Validation loss
+			val_loss = self.validate(val_loader)
+			if val_loss < self.best_val_accuracy:
+				self.best_val_accuracy = val_loss
 				self.save_model(f"best_model.pth")
+			self.training_config.log_metrics(key="Validation Loss", value=val_loss, metrics_type="training")
+			epoch += 1
 
 	def _normalize(self, data:torch.Tensor, mean:np.ndarray, std:np.ndarray):
-		mean = torch.Tensor(mean).to(self.device)
-		std = torch.Tensor(std).to(self.device)
-		return (data - mean) / std
+		data = data.numpy()
+		data = (data-mean) / std
+		return torch.Tensor(data)
 
 	def _denormalize(self, data:torch.Tensor, mean:np.ndarray, std:np.ndarray):
-		mean = torch.Tensor(mean)
-		std = torch.Tensor(std)
-		return (data * std) + mean
+		data = data.numpy()
+		data = (data * std) + mean
+		return torch.Tensor(data)
 	
 	def predict(self, prediction_start_time:int|float=None, 
 				write_interval:int|float=None, 
@@ -241,12 +262,12 @@ class Trainer:
 			self.true_residual_mass = metrics["true_residual_mass"]
 
 			while (self.relative_residual_mass <= self.residual_threshold) and (running_time <= self.training_config.prediction_end_time):
-				prediction_input = self.prepare_input_for_prediction(running_time, data_path, prediction_input).to(self.device)
+				prediction_input = self.prepare_input_for_prediction(running_time, data_path, prediction_input)
 				normalized_input  = self._normalize(prediction_input, input_mean, input_std)
 				predicted_output:torch.Tensor = self.model(normalized_input.to(self.device))
 				predicted_output_concat = torch.cat([output.cpu() for output in predicted_output.values()], dim=1)
 				denormed_output = self._denormalize(predicted_output_concat, label_mean, label_std)
-				prediction_input = prediction_input[:, ::5].cpu() + denormed_output
+				prediction_input = prediction_input[:, ::5] + denormed_output
 				running_time = round(running_time+time_step, self.training_config.round_to)
 				
 			# Because prepare_input_for_prediction function calculates the residual values.
@@ -367,9 +388,9 @@ class Trainer:
 			pred_data = [np.add(t,d) for t,d in zip(ground_truth, pad_pred_data)]
 
 			# Saving the predicted data: True prediction are the ones after applying the boundary conditions.
-			self.ux_matrix = np.round(pred_data[self.ux_index],12)
-			self.uy_matrix = np.round(pred_data[self.uy_index],12)
-			self.t_matrix = np.round(pred_data[self.t_index], 9)
+			self.ux_matrix = pred_data[self.ux_index]
+			self.uy_matrix = pred_data[self.uy_index]
+			self.t_matrix = pred_data[self.t_index]
 			
 			return pred_data
 
@@ -491,12 +512,12 @@ class Trainer:
 
 		return torch.Tensor(data)
 
-def main(base_config:BaseConfig, 
+def main( 
 		 openfoam_config:OpenfoamConfig, 
 		 training_config:TrainingConfig,
 		 network_type:torch.nn.Module=FVMNetwork,
 		 dataset_type:Dataset=FVMNDataset,
-		 visualize:bool=False):
+		 ):
 	
 	# Variables:
 	# Training
@@ -514,52 +535,89 @@ def main(base_config:BaseConfig,
 	framework_start_time = timeit.default_timer()
 	training_config.logger.info(f"Framework started at {framework_start_time}")
 
-	# Create trainer instance
 	trainer = Trainer(training_config=training_config, model=model, optimizer=optimizer, loss_fn=loss_fn)
-	first_training = True
-
 	# To skip initial training for 5000 epochs and use the best saved model from this training.
-	trainer.training_config.epochs = 1
-	trainer.best_val_accuracy = 1.0
+	# trainer.training_config.epochs = 1
+	# trainer.best_val_accuracy = 1.0
+	# Create trainer instance
+	first_training = True
 
 	while running_time < training_config.prediction_end_time:
 		# Run CFD first:
-		is_solver_run = openfoam_utils.run_solver(start_time=training_start_time, 
-												  end_time=training_end_time,
-												  save_to_numpy=True)
+		openfoam_utils.run_solver(
+								start_time=training_start_time, 
+								end_time=training_end_time,
+								save_to_numpy=True
+								)
 
 		if training_end_time >= trainer.training_config.prediction_end_time: break
+
 		# Create dataset instance
-		dataset = dataset_type(training_config=trainer.training_config,
-						 		first_training=first_training, 
-							  	start_time=training_start_time, 
-							  	end_time=training_end_time, 
-							  	time_step=trainer.training_config.write_interval)
-		train_loader, val_loader = get_dataloader(training_config, dataset, batch_size=trainer.training_config.batch_size)
+		dataset = dataset_type(
+							training_config=trainer.training_config,
+							first_training=first_training, 
+							start_time=training_start_time, 
+							end_time=training_end_time, 
+							time_step=trainer.training_config.write_interval
+							)
+			
+		train_loader, val_loader = get_dataloader(
+												training_config, 
+												dataset, 
+												batch_size=trainer.training_config.batch_size
+												)
 
 		# Train the model
-		trainer.train(train_loader, val_loader, trainer.training_config.epochs)
+		trainer.train(
+					train_loader, 
+					val_loader, 
+					trainer.training_config.epochs,
+					freeze=False
+					)
+		# if running_time > 10.02:
+		# 	trainer.train_on_residual(
+		# 							train_loader, 
+		# 							val_loader
+		# 							)
+		
 		trainer.best_val_accuracy = float("inf") # Reset the best validation accuracy for transfer learning
 		trainer.relative_residual_mass = 1.0 # Reset the relative residual mass for transfer learning
 
 		# Before prediction, load the best model: because we are using the same instance of self.model for prediction, hence last trained parameters will be used.
 		model = trainer.load_model("best_model.pth")
-		if trainer.training_config.epochs == 5000:
-			trainer.save_model("model_gt.pth")
-		print("\nStarting prediction from: ", round(training_end_time+trainer.training_config.write_interval,2))
-		running_time = trainer.predict(prediction_start_time=training_end_time, 
-									   write_interval=trainer.training_config.write_interval)
+
+		if trainer.training_config.epochs == 5000: trainer.save_model("model_gt.pth")
+
+		print("\nStarting prediction from: ", round(
+												training_end_time+trainer.training_config.write_interval,
+												2
+												)
+			)
+		
+		running_time = trainer.predict(
+									prediction_start_time=training_end_time, 
+									write_interval=trainer.training_config.write_interval
+									)
 		print(f"Prediction ended at:{running_time}\n")
+
 		# Convert predicted numpy to foam
-		numpyToFoam_string = numpyToFoam(openfoam_config=openfoam_config, 
-									   latestML_time=float(running_time), 
-									   latestCFD_time=training_end_time)
+		numpyToFoam_string = numpyToFoam(
+									openfoam_config=openfoam_config, 
+									latestML_time=float(running_time), 
+									latestCFD_time=training_end_time
+									)
 
 		openfoam_config.logger.info(f"Converted numpy to foam: {numpyToFoam_string}")
 
 		# Transfer learning
-		training_start_time = round(running_time+trainer.training_config.write_interval, 2) # Because until running time, we'd already predicted the data.
-		training_end_time = round(training_start_time + 9*trainer.training_config.write_interval,2)
+		training_start_time = round(
+								running_time+trainer.training_config.write_interval, 
+								2
+								) # Because until running time, we'd already predicted the data.
+		training_end_time = round(
+								training_start_time + 9*trainer.training_config.write_interval,
+								2
+								)
 		trainer.training_config.epochs = 10
 		first_training = False
 
@@ -567,56 +625,13 @@ def main(base_config:BaseConfig,
 	framework_end_time = timeit.default_timer()
 	training_config.logger.info(f"Framework ended at {framework_end_time}")
 
-def main_test(base_config:BaseConfig, 
-		openfoam_config:OpenfoamConfig, 
-		training_config:TrainingConfig,
-		network_type:torch.nn.Module=FVMNetwork,
-		dataset_type:Dataset=FVMNDataset,
-		visualize:bool=False):
-	
-	# Variables:
-	# Training
-	training_start_time = 10.55
-	training_end_time = 10.66
-	running_time = training_start_time
-	optimizer = training_config.optimizer
-	loss_fn = training_config.loss
-
-
-	training_config.prediction_end_time = 11.0
-	# Create model instance
-	model = network_type(training_config)
-	openfoam_utils = OpenfoamUtils(openfoam_config)
-
-	##################### RePIT: START #####################
-	framework_start_time = timeit.default_timer()
-	training_config.logger.info(f"Framework started at {framework_start_time}")
-	training_config.epochs = 10
-	is_solver_run = openfoam_utils.run_solver(start_time=training_start_time, 
-												  end_time=training_end_time)
-	# Create dataset instance
-	dataset = dataset_type(training_config=training_config,
-							first_training=False, 
-							start_time=training_start_time, 
-							end_time=training_end_time, 
-							time_step=training_config.write_interval)
-	train_loader, val_loader = get_dataloader(training_config, dataset)
-
-	# Create trainer instance
-	trainer = Trainer(training_config=training_config, model=model, optimizer=optimizer, loss_fn=loss_fn, model_name="model_gt.pth")
-
-	# Train the model
-	trainer.train(train_loader, val_loader, training_config.epochs)
-	trainer.predict(prediction_start_time=training_end_time,
-				 write_interval=training_config.write_interval)
-
 if __name__ == "__main__":
 	openfoam_config = OpenfoamConfig()
 	training_config = TrainingConfig()
-	base_config = BaseConfig()
 
 	# Run the main function
-	main(base_config, openfoam_config, training_config)
+	main(openfoam_config, training_config)
+
 	# Start Prediction
 	# trainer = Trainer(training_config=training_config,
 	#                   model=FVMNetwork(training_config=training_config),

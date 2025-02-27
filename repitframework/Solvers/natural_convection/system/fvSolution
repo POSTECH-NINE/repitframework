@@ -53,8 +53,8 @@ solvers
 PIMPLE
 {
     momentumPredictor yes;
-    nOuterCorrectors 1;
-    nCorrectors     2;
+    nOuterCorrectors 3;
+    nCorrectors     4;
     nNonOrthogonalCorrectors 0;
 
     pRefCell        0;

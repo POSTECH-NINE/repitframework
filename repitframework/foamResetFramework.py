@@ -46,7 +46,7 @@ def cleanMetrics(metrics_dir:str)->None:
     for file in os.scandir(metrics_dir):
         if file.name in files_to_clean:
             os.system(f"rm {file.path}")
-    os.system(f"cp {metrics_dir}/model_gt.pth {metrics_dir}/best_model.pth")
+    os.system(f"cp {metrics_dir}/enforced_model.pth {metrics_dir}/best_model.pth")
     print("Cleaned the metrics directory.")
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ def residual_mass(ux_matrix:np.ndarray,uy_matrix:np.ndarray):
     Return:
     Rs_mass_sum: float: sum of Rs_mass
     '''
-    assert ux_matrix.shape == (ny,nx), f"Shape is {ux_matrix.shape} but should be (ny,nx)"
+    # assert ux_matrix.shape == (ny,nx), f"Shape is {ux_matrix.shape} but should be (ny,nx)"
     assert ux_matrix.shape == uy_matrix.shape, "Shape of ux_matrix and uy_matrix should be the same"
 
     ux_with_down_boundary = ux_matrix[2:ny,1:nx-1]

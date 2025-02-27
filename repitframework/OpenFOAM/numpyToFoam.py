@@ -2,12 +2,15 @@ from pathlib import Path
 import subprocess
 import re
 from copy import deepcopy
+import json
 
 import numpy as np
+import torch
 import Ofpp
 
-from repitframework.config import OpenfoamConfig
+from repitframework.config import OpenfoamConfig, TrainingConfig
 from repitframework.OpenFOAM import OpenfoamUtils
+from repitframework.Models.FVMN.fvmn import ConvPhiNet
 
 
 '''
@@ -30,33 +33,46 @@ def calculate_rho(pressure_data:np.ndarray, temperature_data: np.ndarray) -> np.
 	rho_idealgas = (pressure_data * mol_wt) / (gas_constant * temperature_data)
 	return rho_idealgas
 
-def calculate_phi(rho_data:np.ndarray, velocity_data:np.ndarray):
-	rho = rho_data.reshape(200,200, order="F")
-	rho_x_faces = 0.5 * (rho[:-1,:] + rho[1:,:])
-	rho_y_faces = 0.5 * (rho[:, :-1] + rho[:,1:])
+def calculate_phi(phi_model_path:Path, velocity_data:np.ndarray, metrics_path:Path=None) -> np.ndarray:
+	'''
+	We need to calculate phi using the model. 
+	'''
+	ux = velocity_data[:,0].reshape(200,200, order='F')
+	uy = velocity_data[:,1].reshape(200,200, order='F')
+	velocity = np.stack([ux, uy], axis=0)
+	velocity = velocity.reshape(1,2,200,200)
 
-	U = velocity_data.reshape(200,200,-1, order="F")
-	Ux_faces = 0.5 * (U[:-1,:, 0] + U[1:,:,0])
-	Uy_faces = 0.5 * (U[:,:-1, 1] + U[:,1:,1])
+	with open(metrics_path, "r") as f:
+		metrics = json.load(f)
 
-	phi_x_faces = rho_x_faces * Ux_faces * 0.005
-	phi_y_faces = rho_y_faces * Uy_faces * 0.005
+	phi_input_mean = np.array(metrics["phi_input_MEAN"])
+	phi_input_std = np.array(metrics["phi_input_STD"])
+	phi_label_mean = np.array(metrics["phi_label_MEAN"])
+	phi_label_std = np.array(metrics["phi_label_STD"])
 
-	phi_x_faces = phi_x_faces.reshape(-1, order="F")
-	phi_y_faces = phi_y_faces.reshape(-1, order="F")
-
-	return np.concatenate([phi_x_faces, phi_y_faces], axis=0)
+	velocity = (velocity - phi_input_mean) / phi_input_std
+	velocity = torch.Tensor(velocity).to("cuda" if torch.cuda.is_available() else "cpu")
+	torch.cuda.empty_cache()
+	phi_model = ConvPhiNet()
+	phi_model.to("cuda" if torch.cuda.is_available() else "cpu")
+	phi_model.load_state_dict(torch.load(phi_model_path, weights_only=True))
+	phi_model.eval()
+	phi = phi_model(velocity)
+	phi = phi.cpu().detach().numpy()
+	phi = phi * phi_label_std + phi_label_mean
+	return phi.reshape(-1, order='F')
+	
 
 def calculate_prgh(pressure_data:np.ndarray, temperature_data:np.ndarray) -> np.ndarray:
 	'''
 	The height is exactly this: 
-	array([[0.005, 0.005, 0.005, ..., 0.005, 0.005, 0.005],
-       [0.01 , 0.01 , 0.01 , ..., 0.01 , 0.01 , 0.01 ],
-       [0.015, 0.015, 0.015, ..., 0.015, 0.015, 0.015],
+	array([[0.005, 0.01 , 0.015, ..., 0.99 , 0.995, 1.   ],
+       [0.005, 0.01 , 0.015, ..., 0.99 , 0.995, 1.   ],
+       [0.005, 0.01 , 0.015, ..., 0.99 , 0.995, 1.   ],
        ...,
-       [0.99 , 0.99 , 0.99 , ..., 0.99 , 0.99 , 0.99 ],
-       [0.995, 0.995, 0.995, ..., 0.995, 0.995, 0.995],
-       [1.   , 1.   , 1.   , ..., 1.   , 1.   , 1.   ]])
+       [0.005, 0.01 , 0.015, ..., 0.99 , 0.995, 1.   ],
+       [0.005, 0.01 , 0.015, ..., 0.99 , 0.995, 1.   ],
+       [0.005, 0.01 , 0.015, ..., 0.99 , 0.995, 1.   ]])
 	'''
 	
 	gravity = 9.81
@@ -65,9 +81,12 @@ def calculate_prgh(pressure_data:np.ndarray, temperature_data:np.ndarray) -> np.
 	mol_wt = 0.02896
 	gas_constant = 8.31446261815324
 
-	spatial_range = OpenfoamUtils.generate_intervals(0.005, 200*0.005, 0.005, 3)
-	spatial_range = np.array(spatial_range).reshape(-1,1)
-	height = np.tile(spatial_range, (1,200))
+	spatial_range = OpenfoamUtils.generate_intervals(
+													0.005, 200*0.005, 
+												  	time_step=0.005, round_to=3
+													)
+	spatial_range = np.array(spatial_range).reshape(-1,)
+	height = np.tile(spatial_range, (200,1))
 	
 	pressure_data = pressure_data.reshape(200,200, order='F')
 	temperature_data = temperature_data.reshape(200,200, order='F')
@@ -84,7 +103,11 @@ def include_all_features_NC(temperature_data:np.ndarray, latestML_time_dir:Path,
 	pressure_data = Ofpp.parse_internal_field(pressure_path)
 	rho_data = calculate_rho(pressure_data, temperature_data)
 	p_rgh = calculate_prgh(pressure_data, temperature_data)
-	phi = calculate_phi(rho_data, velocity_data)
+	phi = calculate_phi(
+					phi_model_path=Path("/home/shilaj/repitframework/repitframework/ModelDump/natural_convection/best_phi_model.pth"),
+					velocity_data=velocity_data,
+					metrics_path=Path("/home/shilaj/repitframework/repitframework/ModelDump/natural_convection/phi_denorm_metrics.json")
+					)
 	for file in latestML_time_dir.iterdir():
 		if file == latestML_time_dir / "rho":
 			data_str = "(\n" + parse_numpy(rho_data) + "\n)\n;"
@@ -94,10 +117,11 @@ def include_all_features_NC(temperature_data:np.ndarray, latestML_time_dir:Path,
 			with open(file, "w") as f: 
 				f.write(foam_data)
 		elif file == latestML_time_dir / "p_rgh":
-			data_str = "(\n" + parse_numpy(p_rgh) + "\n)\n;"
-			with open(file, "r") as f: 
-				foam_data = f.read()
-				foam_data = re.sub(r'\([\s\S]*?\)\n;', f'{data_str}',foam_data,count=1)
+			pass
+			# data_str = "(\n" + parse_numpy(p_rgh) + "\n)\n;"
+			# with open(file, "r") as f: 
+			# 	foam_data = f.read()
+			# 	foam_data = re.sub(r'\([\s\S]*?\)\n;', f'{data_str}',foam_data,count=1)
 			# with open(file, "w") as f: 
 			# 	f.write(foam_data)
 		elif file == latestML_time_dir / "phi":

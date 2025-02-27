@@ -4,7 +4,7 @@ import json
 
 from torch.utils.data import Dataset
 import numpy as np
-from torch import Tensor, set_default_dtype, float64
+from torch import Tensor, set_default_dtype, float64, tensor
 
 from repitframework.config import TrainingConfig
 from repitframework.Metrics.ResidualNaturalConvection import residual_mass
@@ -206,7 +206,7 @@ class FVMNDataset(Dataset):
         5. Concatenate the data. From this function: we get [39204,15] shape. if we have 3 variables in the data_vars. 
         '''
         data_path = self.data_path
-        full_data_path = [data_path / f"{var}_{time}.npy" for var in self.vars]
+        full_data_path = [data_path / f"{var}_{time}.npy" for var in self.vars if var != "phi"]
         numpy_data = [self.parse_numpy(self.training_config, data_path) for data_path in full_data_path]
         temp = list()
         for data in numpy_data:
@@ -317,13 +317,91 @@ class FVMNDataset(Dataset):
     def __getitem__(self, idx):
         return self.inputs[idx], self.labels[idx]
     
+
+class PhiDataset(Dataset):
+    def __init__(
+            self, training_config:TrainingConfig, 
+            start_time: float, end_time: float, 
+            calculate_stat:bool=True
+            ):
+        self.training_config = training_config
+        self.start_time = start_time
+        self.end_time = end_time
+        self.time_step = self.training_config.write_interval
+        self.time_list = self._generate_intervals()
+        self.data_path = self.training_config.assets_path
+        self.grid_size = (200, 200)  # Assuming grid is always 200x200
+        self.calculate_stat = calculate_stat
+
+        self.inputs, self.labels = self._prepare_inputs_and_labels()
+        super().__init__()
+
+    def _generate_intervals(self):
+        time_list = []
+        running_time = self.start_time
+        while running_time <= self.end_time:
+            time_list.append(round(running_time, self.training_config.round_to))
+            running_time = round(running_time + self.time_step, self.training_config.round_to)
+        return time_list
+
+    def parse_numpy(self, data_path):
+        """Load numpy array and reshape to match network expectations."""
+        data = np.load(data_path)
+        if len(data.shape) > 1:
+            data_dim = self.training_config.data_dim
+            return data[:,:data_dim]
+        return data.reshape(-1, 1, order="F")
+
+    def _prepare_input(self, time) -> np.ndarray:
+        """Load U_x and U_y and reshape to [2, 200, 200]."""
+        full_data_path = self.data_path / f"U_{time}.npy"
+        numpy_data = self.parse_numpy(full_data_path)  # Shape: [40000, 2]
+        
+        ux = numpy_data[:, 0].reshape(self.grid_size, order="F")
+        uy = numpy_data[:, 1].reshape(self.grid_size, order="F")
+
+        return np.stack([ux, uy], axis=0)  # Shape: [2, 200, 200]
+
+    def _prepare_labels(self, time) -> np.ndarray:
+        """Load phi and keep it as a 1D flattened array."""
+        full_data_path = self.data_path / f"phi_{time}.npy"
+        numpy_data = self.parse_numpy(full_data_path)  # Shape: [79600, 1]
+        return numpy_data.flatten()  # Ensure it matches output shape [79600]
+
+    def _prepare_inputs_and_labels(self) -> Tuple[Tensor, Tensor]:
+        """Load all time steps into memory."""
+        inputs, labels = [], []
+        for time in self.time_list:
+            inputs.append(self._prepare_input(time))   # Shape: [2, 200, 200]
+            labels.append(self._prepare_labels(time))  # Shape: [79600]
+
+        inputs = np.array(inputs)  # Shape: [batch, 2, 200, 200]
+        labels = np.array(labels)  # Shape: [batch, 79600]
+
+
+        normed_inputs, input_MEAN, input_STD = FVMNDataset.normalize(inputs)
+        normed_labels, label_MEAN, label_STD = FVMNDataset.normalize(labels)
+
+        metrics_save_path = self.training_config.model_dir / "phi_denorm_metrics.json"
+        if self.calculate_stat:
+            with open(metrics_save_path, "w") as f:
+                json.dump({"phi_input_MEAN": input_MEAN.tolist(), "phi_input_STD": input_STD.tolist(),
+                        "phi_label_MEAN": label_MEAN.tolist(), "phi_label_STD": label_STD.tolist()}, f, indent=4)
+        return normed_inputs, normed_labels
+
+    def __len__(self):
+        return self.inputs.shape[0]
+
+    def __getitem__(self, idx):
+        return self.inputs[idx], self.labels[idx]
+    
 if __name__ == "__main__":
     training_config = TrainingConfig()
     data_path = training_config.assets_path
     start_time = 10.0
     end_time = 10.02
     time_step = 0.01
-    data = FVMNDataset(training_config,False, data_path, start_time, end_time, time_step)
+    data = PhiDataset(training_config,start_time, end_time)
     inputs , labels = data._prepare_inputs_and_labels()
     print(inputs.shape, labels.shape, len(data))
 

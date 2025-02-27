@@ -163,7 +163,7 @@ class TrainingConfig(BaseConfig):
 		self.training_end_time = 10.02
 		self.prediction_start_time = 10.02
 		self.prediction_end_time = 20.0
-		self.bc_type:str = "ground_truth" # either "enforced" or "ground_truth"
+		self.bc_type:str = "enforced" # either "enforced" or "ground_truth"
 
 		self.log_file: Path = Path("Training.log")
 		self.logger = self.setup_logger("TrainingLogger",self.log_file)

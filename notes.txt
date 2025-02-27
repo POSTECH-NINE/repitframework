@@ -1,2 +1,0 @@
-These things might come handy to ensure the citation while writing the paper: 
-1. MultiLayer feedforward networks are universal approximator: Hornik et. al., 1989

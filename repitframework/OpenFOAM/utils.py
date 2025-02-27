@@ -364,6 +364,7 @@ class OpenfoamUtils:
 if __name__ == "__main__":
     openfoam_config = OpenfoamConfig()
     openfoam_utils = OpenfoamUtils(openfoam_config)
-    # openfoam_utils.run_solver(start_time=0.01, end_time=20.0, write_interval=0.01,save_to_numpy=False, del_dirs=False)
+    # openfoam_utils.run_solver(start_time=10.0, end_time=10.02, write_interval=0.01,save_to_numpy=False, del_dirs=False)
     openfoam_utils.parse_to_numpy(openfoam_config, start_time=10.0, end_time=20.0, 
-                                  solver_dir="/home/shilaj/shilaj_data/repitframework/repitframework/Solvers/natural_convection")
+                                  solver_dir="/home/shilaj/repitframework/repitframework/Assets/CFD_full_simulation",
+                                  variables=["phi"])
