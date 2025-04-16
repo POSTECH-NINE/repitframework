@@ -153,21 +153,22 @@ class TrainingConfig(BaseConfig):
 		super().__init__()
 		self.batch_size: int = 10000
 		self.epochs: int = 5000
-		self.learning_rate: float = 0.001
+		self.learning_rate: float = 1e-3
 		self.residual_threshold: float = 5.0 # Adapted from the paper: Section 4.1; page 8
 		self.device: str = "cuda:1" if cuda.is_available() else "cpu"
-		self.optimizer = torch.optim.Adam
+		self.optimizer = torch.optim.AdamW
 		self.loss = torch.nn.MSELoss()
 		self.activation = torch.nn.ReLU
 
 		self.training_start_time = 10.0
-		self.training_end_time = 10.02
-		self.prediction_start_time = 10.02
-		self.prediction_end_time = 110.0
+		self.training_end_time = 10.03
+		self.prediction_start_time = 10.03
+		self.prediction_end_time = 20.0
 		self.bc_type:str = "enforced" # either "enforced" or "ground_truth"
 
 		self.log_file: Path = Path("Training.log")
 		self.logger = self.setup_logger("TrainingLogger",self.log_file)
+		self._assign_temperature_profiles()
 
 	def log_metrics(self, key:str, value:int|float, metrics_type:str="prediction"):
 		logging_path = Path(self.model_dir, f"{metrics_type}_metrics.json")
@@ -185,11 +186,23 @@ class TrainingConfig(BaseConfig):
 		with open(logging_path, "w") as f:
 			json.dump(data, f, indent=4)
 	
+	def _assign_temperature_profiles(self,):
+		# TODO: for ease of use, it is hard-coded but think about making it dynamic.
+		if self.solver_dir.name == "natural_convection_case1":
+			self.left_wall_temperature = 307.75
+			self.right_wall_temperature = 288.15
+		elif self.solver_dir.name == "natural_convection_case2":
+			self.left_wall_temperature = 317.75
+			self.right_wall_temperature = 278.15
+		elif self.solver_dir.name == "natural_convection_case3":
+			self.left_wall_temperature = 327.75
+			self.right_wall_temperature = 268.15
+		else:
+			raise ValueError(f"Unknown case name: {self.solver_dir.name}. Please check the case name.")
+		
 	def hard_contraint_bc(
 		self, 
-		data_list:List,
-		left_wall_temperature:float = 307.75,
-		right_wall_temperature:float = 288.15
+		data_list:List
 	):
 		'''
 		We are just encoding the boundary conditions as an extra layer to the predicted values. 
@@ -207,18 +220,6 @@ class TrainingConfig(BaseConfig):
 
 		ux and uy are noSlip conditions, hence they should be zero.
 		'''
-		# TODO: for ease of use, it is hard-coded but think about making it dynamic.
-		if self.solver_dir.name == "natural_convection_case1":
-			left_wall_temperature = 307.75
-			right_wall_temperature = 288.15
-		elif self.solver_dir.name == "natural_convection_case2":
-			left_wall_temperature = 317.75
-			right_wall_temperature = 278.15
-		elif self.solver_dir.name == "natural_convection_case3":
-			left_wall_temperature = 327.75
-			right_wall_temperature = 268.15
-		else:
-			raise ValueError(f"Unknown case name: {self.solver_dir.name}. Please check the case name.")
 		
 		vars_list = self.get_variables()
 		ux_matrix = data_list[vars_list.index("U_x")]
@@ -246,8 +247,8 @@ class TrainingConfig(BaseConfig):
 			- Right wall is the cold wall
 		'''
 
-		top_wall_temperature = left_wall_temperature
-		bottom_wall_temperature = right_wall_temperature
+		top_wall_temperature = self.left_wall_temperature
+		bottom_wall_temperature = self.right_wall_temperature
 
 		t_matrix[:, 0] = t_matrix[:, 1]
 		t_matrix[:, -1] = t_matrix[:, -2]
@@ -267,6 +268,7 @@ if __name__ == "__main__":
 
 	# Testing logger:
 	base_config.logger.info("Testing BaseConfig logger")
+	print(training_config.left_wall_temperature, training_config.right_wall_temperature)
 	openfoam_config.logger.info("Testing OpenFOAM logger")
 
 	print(openfoam_config.data_vars, openfoam_config.extend_variables(),openfoam_config.assets_path)

@@ -5,11 +5,12 @@ from typing import Dict
 import json
 from collections import defaultdict
 import os
+from datetime import datetime
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-from repitframework.config import BaseConfig
+from repitframework.config import BaseConfig, TrainingConfig
 
 
 warning_string = '''\n
@@ -289,8 +290,8 @@ def get_probes_data(
 	if pred_time_list:
 		min_time = min(pred_time_list)
 		max_time = max(pred_time_list)
-		interval_time = round(0.01, base_config.round_to)
-		timestamps = np.round(np.arange(min_time, max_time, interval_time), base_config.round_to)
+		interval_time = round(0.01, 2) # TODO: hardcoded the round to value. 
+		timestamps = np.round(np.arange(min_time, max_time, interval_time), 2)
 	else:
 		timestamps = full_time_list
 
@@ -531,15 +532,206 @@ def plot_residual_change(
 	plt.tight_layout()
 	plt.savefig(f"{save_path}/{save_name}.png")
 
+# def still_comparisons(
+# 		prediction_dir:Path|str,
+# 		ground_truth_dir:Path|str,
+# 		time_list:list[float]=[20,60,110],
+# 		temp_profiles:list[float]=[288.15, 307.75]):
+# 	var_labels = ["Temperature", "Velocity"]
+# 	data_dict = {
+# 		"Ground truth": [],
+# 		"Prediction": []
+# 	}
+# 	prediction_dir = Path(prediction_dir)
+# 	ground_truth_dir = Path(ground_truth_dir)
+# 	# Check if the directories exist
+# 	if not prediction_dir.exists():
+# 		raise FileNotFoundError(f"Prediction directory {prediction_dir} does not exist.")
+# 	if not ground_truth_dir.exists():
+# 		raise FileNotFoundError(f"Ground truth directory {ground_truth_dir} does not exist.")
+# 	# Load the data
+# 	for time in time_list:
+# 		time = float(time)
+# 		ground_truth_temp = np.load(ground_truth_dir / f"T_{time}.npy").reshape(200,200)
+# 		prediction_path_T = prediction_dir / f"T_{time}_predicted.npy"
+# 		prediction_path_U = prediction_dir / f"U_{time}_predicted.npy"
+# 		if not prediction_path_T.exists():
+# 			prediction_path_T = prediction_dir / f"T_{time}.npy"
+# 			prediction_path_U = prediction_dir / f"U_{time}.npy"
+# 		predicted_temp = np.load(prediction_path_T).reshape(200,200)
+# 		ground_truth_vel = np.load(ground_truth_dir / f"U_{time}.npy")[:,0].reshape(200,200)
+# 		predicted_vel = np.load(prediction_path_U)[:,0].reshape(200,200)
 
-if __name__ == "__main__":
+# 		data_dict["Ground truth"].append([ground_truth_temp, ground_truth_vel])
+# 		data_dict["Prediction"].append([predicted_temp, predicted_vel])
 
+# 	cols = len(data_dict)
+# 	rows = len(time_list)*len(var_labels)
+# 	time_labels = [f"{time} s" for time in time_list]
+# 	fig, axs = plt.subplots(rows, cols ,figsize=(10, 10), constrained_layout=True)
+
+# 	vmin_temp = temp_profiles[0]
+# 	vmax_temp = temp_profiles[1]
+
+# 	# vmin_vel = -0.2
+# 	# vmax_vel = 0.3
+# 	# Loop through rows and columns to fill in data
+# 	for row in range(rows):  # 2 variables x 2 time steps
+# 		for col, (title, data_list) in enumerate(data_dict.items()):
+# 			if row in list(range(len(time_list))): img = axs[row, col].imshow(data_list[row//len(var_labels)][0], cmap="coolwarm", origin="lower") 
+# 			else: img = axs[row, col].imshow(data_list[row//len(var_labels)][1], cmap="turbo",origin="lower")
+# 			if title == "Ground truth": 
+# 				cbar = plt.colorbar(img, ax=axs[row, col], fraction=0.046, pad=0.04)
+# 			axs[row, col].set_xticks([])
+# 			axs[row, col].set_yticks([])
+# 			if row == 0:
+# 				axs[row, col].set_title(title, fontsize=12)
+
+# 	# Add row labels for Temperature/Velocity
+# 	for row_idx, var_label in enumerate(var_labels):
+# 		fig.text(0.02, 0.75 - row_idx * 0.5, var_label, va='center', ha='center', 
+# 				fontsize=12, fontweight='bold', rotation=90, bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5'))
+
+# 	# Add row labels for Time (12s, 20s) in both Temperature & Velocity sections
+# 	for row_idx, time_label in enumerate(time_labels):
+# 		fig.text(0.02, 0.88 - row_idx * 0.25, time_label, va='center', ha='center', 
+# 				fontsize=10, bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5'))
+# 		fig.text(0.02, 0.38 - row_idx * 0.25, time_label, va='center', ha='center', 
+# 				fontsize=10, bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5'))
+		
+# 	#Save the plot
+# 	plots_path = Path(str(prediction_dir).replace("Assets", "plots"))
+# 	plots_path.mkdir(parents=True, exist_ok=True)
+# 	plt.savefig(plots_path / "still_comparisons.png", bbox_inches='tight')
+
+def still_comparisons(
+		prediction_dir:Path|str,
+		ground_truth_dir:Path|str,
+		time_list:list[float]=[20,60,110],
+		temp_profiles:list[float]=[288.15, 307.75]):
+
+	var_labels = ["Temperature", "Velocity"]
+	prediction_dir = Path(prediction_dir)
+	ground_truth_dir = Path(ground_truth_dir)
+
+	if not prediction_dir.exists():
+		raise FileNotFoundError(f"Prediction directory {prediction_dir} does not exist.")
+	if not ground_truth_dir.exists():
+		raise FileNotFoundError(f"Ground truth directory {ground_truth_dir} does not exist.")
+
+	data_dict = {"Ground truth": [], "Prediction": []}
+
+	for time in time_list:
+		time = float(time)
+		gt_temp = np.load(ground_truth_dir / f"T_{time}.npy").reshape(200, 200)
+		gt_vel = np.load(ground_truth_dir / f"U_{time}.npy")[:, 0].reshape(200, 200)
+
+		pred_temp_path = prediction_dir / f"T_{time}_predicted.npy"
+		pred_vel_path = prediction_dir / f"U_{time}_predicted.npy"
+
+		if not pred_temp_path.exists():
+			pred_temp_path = prediction_dir / f"T_{time}.npy"
+			pred_vel_path = prediction_dir / f"U_{time}.npy"
+
+		pred_temp = np.load(pred_temp_path).reshape(200, 200)
+		pred_vel = np.load(pred_vel_path)[:, 0].reshape(200, 200)
+
+		data_dict["Ground truth"].append((gt_temp, gt_vel))
+		data_dict["Prediction"].append((pred_temp, pred_vel))
+
+	n_rows = len(time_list)
+	n_cols = 4  # 2 conditions (Ground truth/Prediction) * 2 variables (Temp/Vel)
+
+	fig, axs = plt.subplots(n_rows, n_cols, figsize=(16, 4*n_rows), constrained_layout=True)
+
+	for row, time in enumerate(time_list):
+		for col, key in enumerate(["Ground truth", "Prediction"]):
+			temp_img = axs[row, col*2].imshow(data_dict[key][row][0], cmap="turbo", origin="lower")
+			vel_img = axs[row, col*2+1].imshow(data_dict[key][row][1], cmap="viridis", origin="lower")
+
+			# Set titles
+			if row == 0:
+				axs[row, col*2].set_title(f"{key} - Temperature", fontsize=12)
+				axs[row, col*2+1].set_title(f"{key} - Velocity", fontsize=12)
+
+			# Colorbars
+			fig.colorbar(temp_img, ax=axs[row, col*2], fraction=0.046, pad=0.04)
+			fig.colorbar(vel_img, ax=axs[row, col*2+1], fraction=0.046, pad=0.04)
+
+			# Remove ticks
+			for idx in [col*2, col*2+1]:
+				axs[row, idx].set_xticks([])
+				axs[row, idx].set_yticks([])
+
+			# Row labels (time)
+			axs[row, 0].set_ylabel(f"{time} s", fontsize=12, rotation=90, labelpad=15)
+
+	# Save the plot
+	plots_path = Path(str(prediction_dir).replace("Assets", "plots"))
+	plots_path.mkdir(parents=True, exist_ok=True)
+	plt.savefig(plots_path / "still_comparisons.png", bbox_inches='tight')
+	plt.close()
+
+def save_loss(training_config:TrainingConfig,
+			  save_initial_losses:bool=False,
+			  merge_initial_losses:bool=False,
+			  save_path:Path="./"):
+	training_metrics_path = training_config.model_dir / "training_metrics.json"
+	with open(training_metrics_path, "r") as f:
+		metrics = json.load(f)
+	
+	plots_dir = str(training_config.model_dir).replace("ModelDump", "plots")
+	plots_dir = Path(plots_dir) / "loss"
+	plots_dir.mkdir(parents=True, exist_ok=True)
+	train_loss:list = metrics["Training Loss"]
+	val_loss:list = metrics["Validation Loss"]
+	
+	initial_loss_path = training_config.model_dir / "initial_losses.json"
+
+	if save_initial_losses:
+		initial_epochs = val_loss.index(min(val_loss)) + 1
+		train_loss = train_loss[:initial_epochs]
+		val_loss = val_loss[:initial_epochs]
+		with open(initial_loss_path, "w") as f:
+			json.dump({"Training Loss": train_loss, "Validation Loss": val_loss}, f, indent=4)
+
+	if initial_loss_path.exists() and merge_initial_losses:
+		with open(initial_loss_path, "r") as f:
+			initial_losses = json.load(f)
+		train_loss = initial_losses["Training Loss"] + train_loss
+		val_loss = initial_losses["Validation Loss"] + val_loss
+	
+	# Annotate the max AE point
+	epochs = np.linspace(1, len(train_loss), len(train_loss))
+	# plt.annotate(f"Min Val Loss: {min(val_loss)}\nEpochs: {val_loss.index(min(val_loss))}",
+	# 			xy=(epochs[1:], val_loss[1:]), xycoords='data',
+	# 			xytext=(-50, 30), textcoords='offset points',
+	# 			arrowprops=dict(arrowstyle="->", color='red'), fontsize=10)
+	
+	plt.figure(figsize=(10,5))
+	plt.plot(epochs[1:], train_loss[1:], label="Training Loss")
+	plt.plot(epochs[1:], val_loss[1:], label="Validation Loss")
+	plt.xlabel("Epochs")
+	plt.ylabel("Loss")
+	plt.yscale("log")
+	plt.title("Training and Validation Loss")
+	plt.legend()
+	plt.tight_layout()
+	plt.savefig(plots_dir / f"training_loss_{datetime.now().strftime("%b-%d_%H:%M")}.png")
+	plt.close()
+
+def plot_everything(
+		plot_start_time:float=10.0,
+		plot_end_time:float=110.0,
+):
 	base_config = BaseConfig()
-	full_time_list = np.round(np.arange(10.0, 110.0, 0.01),2)
+	training_config = TrainingConfig()
+	full_time_list = np.round(np.arange(plot_start_time, plot_end_time, 0.01),2)
 	solver_dir = base_config.solver_dir
 	model_dump_dir = str(solver_dir).replace("Solvers", "ModelDump")
 	ground_truth_dir = str(solver_dir).replace("Solvers", "Assets")+ "_backup"
 	prediction_dir = str(solver_dir).replace("Solvers", "Assets")
+	plots_dir = str(solver_dir).replace("Solvers", "plots")
 	with open(model_dump_dir + "/prediction_metrics.json","r") as f:
 		metrics = json.load(f)
 	time_list = metrics["Running Time"]
@@ -562,33 +754,35 @@ if __name__ == "__main__":
 	# 				np_data_dir="/home/shilaj/repitframework/repitframework/Assets/natural_convection_case3",)
 	save_name_list = ["velocity-x", "velocity-y", "temperature"]
 	quantitative_analysis(
-		pred_time_list=[],
+		pred_time_list=time_list,
+		full_time_list=full_time_list,
+		ground_truth_dir=Path(ground_truth_dir),
+		prediction_dir=Path(prediction_dir),
+		save_name=save_name_list[0],
+		plot_prediction_only=False
+	)
+	quantitative_analysis(
+		pred_time_list=time_list,
 		full_time_list=full_time_list,
 		ground_truth_dir=Path(ground_truth_dir),
 		prediction_dir=Path(prediction_dir),
 		save_name=save_name_list[-1],
 		plot_prediction_only=False
 	)
+	still_comparisons(
+		prediction_dir=prediction_dir,
+		ground_truth_dir=ground_truth_dir,
+		time_list=[plot_start_time, plot_end_time],
+		temp_profiles=[training_config.left_wall_temperature, training_config.right_wall_temperature]
+	)
 	plot_residual_change(
 		running_times=time_list,
 		relative_residual=metrics["Relative Residual Mass"],
 		residual_limit=5,
 		save_name="relative_residual",
-		save_path="/home/shilaj/repitframework/repitframework/plots/natural_convection_case1"
+		save_path=plots_dir
 	)
-	# timestamp = 50.0
-	# visualize_output(
-	# 	base_config=base_config,
-	# 	timestamp=timestamp,
-	# 	is_ground_truth=True,
-	# 	save_name="true",
-	# 	np_data_dir="/home/shilaj/repitframework/repitframework/Assets/natural_convection_case2_backup"
-	# )
 
-	# visualize_output(
-	# 	base_config=base_config,
-	# 	timestamp=timestamp,
-	# 	is_ground_truth=False,
-	# 	save_name="predicted",
-	# 	np_data_dir="/home/shilaj/repitframework/repitframework/Assets/natural_convection_case2"
-	# )
+if __name__ == "__main__":
+
+	plot_everything(plot_start_time=10.0, plot_end_time=20.0)

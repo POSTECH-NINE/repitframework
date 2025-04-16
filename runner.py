@@ -22,6 +22,8 @@ from repitframework.Metrics.ResidualNaturalConvection import (
 	residual_momentum, 
 	residual_heat
 )
+from repitframework.plot_utils import save_loss
+from utils import load_from_state_dict
 
 
 torch.set_default_dtype(torch.float64)
@@ -52,15 +54,15 @@ def get_dataloader(training_config:TrainingConfig,
 	# Split indices for train/validation
 	data_size = len(dataset)
 	indices = list(range(data_size))
-	train_indices, val_indices = train_test_split(indices, test_size=0.2, random_state=1004)
-	# train_indices = indices[:int(2*data_size/3)]
-	# val_indices = indices[int(2*data_size/3):]
+	# train_indices, val_indices = train_test_split(indices, test_size=0.2, random_state=1004)
+	train_indices = indices[:int(2*data_size/3)]
+	val_indices = indices[int(2*data_size/3):]
 
 	train_dataset = Subset(dataset, train_indices)
 	val_dataset = Subset(dataset, val_indices)
 
 	# Create DataLoaders for X (dataset)
-	train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
+	train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=False)
 	val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=False)
 
 	return train_loader, val_loader
@@ -103,87 +105,8 @@ class Trainer:
 			  val_loader:DataLoader, 
 			  epochs, freeze:bool) -> bool:
 		
-		if freeze: freeze_layers(self.model, num_layers=4)
+		if freeze: freeze_layers(self.model, num_layers=2)
 		for epoch in tqdm(range(epochs), desc="Epochs", leave=False):
-			self.model.train()  # Set the model to training mode
-			train_loss = 0.0
-			for x_batch, y_batch in train_loader:
-				x_batch = x_batch.to(self.device) 
-				y_batch = y_batch.to(self.device)
-
-				# Labels: 
-				y_T = y_batch[:,self.t_index:self.t_index+1]
-				y_ux = y_batch[:, self.ux_index:self.ux_index+1]
-				y_uy = y_batch[:, self.uy_index:self.uy_index+1]
-
-				# Forward pass: Hard coded
-				predictions = self.model(x_batch)
-				pred_T = predictions["T"]
-				pred_ux = predictions["U_x"]
-				pred_uy = predictions["U_y"]
-
-				loss_T = self.loss_fn(pred_T, y_T)
-				loss_ux = self.loss_fn(pred_ux, y_ux)
-				loss_uy = self.loss_fn(pred_uy, y_uy)
-				loss = loss_T + loss_ux + loss_uy
-
-				# Backpropagation
-				self.optimizer.zero_grad()
-				loss.backward()
-				self.optimizer.step()
-
-				train_loss += loss.item()*x_batch.size(0)
-			
-			train_loss /= len(train_loader.dataset)
-
-			self.training_config.log_metrics(key="Epoch", value=epoch+1, metrics_type="training")
-			self.training_config.log_metrics(key="Training Loss", value=train_loss, metrics_type="training")
-			training_config.logger.debug(f"Epoch {epoch + 1}, Loss: {train_loss:.4f}")
-
-			# Validation loss
-			val_loss = self.validate(val_loader)
-			if val_loss < self.best_val_accuracy:
-				self.best_val_accuracy = val_loss
-				self.save_model(f"best_model.pth", epoch, train_loss, val_loss)
-			self.training_config.log_metrics(key="Validation Loss", value=val_loss, metrics_type="training")
-
-		return True
-
-	def validate(self, val_loader:DataLoader):
-		self.model.eval()  # Set the model to evaluation mode
-		val_loss = 0.0
-		with torch.no_grad():
-			for x_val, y_val in val_loader:
-				x_val = x_val.to(self.device) 
-				y_val = y_val.to(self.device)
-
-				# Labels: 
-				y_T = y_val[:,self.t_index:self.t_index+1]
-				y_ux = y_val[:, self.ux_index:self.ux_index+1]
-				y_uy = y_val[:, self.uy_index:self.uy_index+1]
-
-				# Forward pass: Hard coded
-				predictions = self.model(x_val)
-				pred_T = predictions["T"]
-				pred_ux = predictions["U_x"]
-				pred_uy = predictions["U_y"]
-
-				loss_T = self.loss_fn(pred_T, y_T)
-				loss_ux = self.loss_fn(pred_ux, y_ux)
-				loss_uy = self.loss_fn(pred_uy, y_uy)
-				loss = loss_T + loss_ux + loss_uy
-
-				val_loss += loss.item() * x_val.size(0)
-		
-		val_loss /= len(val_loader.dataset)
-		training_config.logger.debug(f"Validation Loss: {val_loss:.4f}")
-		return val_loss
-	
-	def train_on_residual(self, train_loader:DataLoader,
-						  val_loader:DataLoader):
-		epoch = 1
-		val_loss = self.validate(val_loader)
-		while val_loss > 5e-2:
 			self.model.train()  # Set the model to training mode
 			train_loss = 0.0
 			for x_batch, y_batch in train_loader:
@@ -225,7 +148,95 @@ class Trainer:
 				self.best_val_accuracy = val_loss
 				self.save_model(f"best_model.pth")
 			self.training_config.log_metrics(key="Validation Loss", value=val_loss, metrics_type="training")
-			epoch += 1
+
+		return True
+
+	def validate(self, val_loader:DataLoader):
+		self.model.eval()  # Set the model to evaluation mode
+		val_loss = 0.0
+		with torch.no_grad():
+			for x_val, y_val in val_loader:
+				x_val = x_val.to(self.device) 
+				y_val = y_val.to(self.device)
+
+				# Labels: 
+				y_T = y_val[:,self.t_index:self.t_index+1]
+				y_ux = y_val[:, self.ux_index:self.ux_index+1]
+				y_uy = y_val[:, self.uy_index:self.uy_index+1]
+
+				# Forward pass: Hard coded
+				predictions = self.model(x_val)
+				pred_T = predictions["T"]
+				pred_ux = predictions["U_x"]
+				pred_uy = predictions["U_y"]
+
+				loss_T = self.loss_fn(pred_T, y_T)
+				loss_ux = self.loss_fn(pred_ux, y_ux)
+				loss_uy = self.loss_fn(pred_uy, y_uy)
+				loss = loss_T + loss_ux + loss_uy
+				val_loss += loss.item() * x_val.size(0)
+		
+		val_loss /= len(val_loader.dataset)
+		training_config.logger.debug(f"Validation Loss: {val_loss:.4f}")
+		return val_loss
+	
+	def train_with_PIL(self, train_loader:DataLoader, 
+			  val_loader:DataLoader, 
+			  epochs, freeze:bool,
+			  switch_count:int=1) -> bool:
+		
+		if freeze: freeze_layers(self.model, num_layers=4)
+		for epoch in tqdm(range(epochs), desc="Epochs", leave=False):
+			self.model.train()  # Set the model to training mode
+			train_loss = 0.0
+			for x_batch, y_batch in train_loader:
+				x_batch = x_batch.to(self.device) 
+				y_batch = y_batch.to(self.device)
+
+				# Labels: 
+				y_T = y_batch[:,self.t_index:self.t_index+1]
+				y_ux = y_batch[:, self.ux_index:self.ux_index+1]
+				y_uy = y_batch[:, self.uy_index:self.uy_index+1]
+
+				# Forward pass: Hard coded
+				predictions = self.model(x_batch)
+				pred_T = predictions["T"]
+				pred_ux = predictions["U_x"]
+				pred_uy = predictions["U_y"]
+
+				loss_T = self.loss_fn(pred_T, y_T)
+				loss_ux = self.loss_fn(pred_ux, y_ux)
+				loss_uy = self.loss_fn(pred_uy, y_uy)
+
+				#TODO: hard coded
+				# Calculate the residuals
+				loss_residual = residual_mass(ux_matrix=pred_ux.reshape(200,200), uy_matrix=pred_uy.reshape(200,200))
+				loss = loss_T + loss_ux + loss_uy
+
+				if switch_count % 10 == 0:
+					loss += loss_residual
+					self.training_config.logger.debug(f"Residual Loss: {loss_residual:.4f}")
+				# Backpropagation
+				self.optimizer.zero_grad()
+				loss.backward()
+				self.optimizer.step()
+
+				train_loss += loss.item()*x_batch.size(0)
+			
+			train_loss /= len(train_loader.dataset)
+
+			self.training_config.log_metrics(key="Epoch", value=epoch+1, metrics_type="training")
+			self.training_config.log_metrics(key="Training Loss", value=train_loss, metrics_type="training")
+			training_config.logger.debug(f"Epoch {epoch + 1}, Loss: {train_loss:.4f}")
+
+			# Validation loss
+			val_loss = self.validate(val_loader)
+			if val_loss < self.best_val_accuracy:
+				self.best_val_accuracy = val_loss
+				self.save_model(f"best_model.pth")
+			self.training_config.log_metrics(key="Validation Loss", value=val_loss, metrics_type="training")
+
+		return True
 
 	def _normalize(self, data:torch.Tensor, mean:np.ndarray, std:np.ndarray):
 		data = data.numpy()
@@ -236,6 +247,7 @@ class Trainer:
 		data = data.numpy()
 		data = (data * std) + mean
 		return torch.from_numpy(data)
+	
 	
 	def predict(self, prediction_start_time:int|float=None, 
 				write_interval:int|float=None, 
@@ -261,17 +273,21 @@ class Trainer:
 		self.model.eval()
 		prediction_input = None
 		running_time = start_time # Because we saving the prediction data at prepare_input_for_prediction function. But, output is after calling this function.
-		with torch.no_grad():
-			# Load the mean and std from the training data: 
-			metrics_path = self.training_config.model_dir / "denorm_metrics.json"
-			with open(metrics_path, "r") as f:
-				metrics = json.load(f)
-			label_mean = np.array(metrics["label_MEAN"])
-			label_std = np.array(metrics["label_STD"])
-			input_mean = np.array(metrics["input_MEAN"])
-			input_std = np.array(metrics["input_STD"])
-			self.true_residual_mass = metrics["true_residual_mass"]
+		# Load the mean and std from the training data: 
+		metrics_path = self.training_config.model_dir / "denorm_metrics.json"
+		with open(metrics_path, "r") as f:
+			metrics = json.load(f)
+		label_mean = np.array(metrics["label_MEAN"])
+		label_std = np.array(metrics["label_STD"])
+		input_mean = np.array(metrics["input_MEAN"])
+		input_std = np.array(metrics["input_STD"])
+		self.true_residual_mass = metrics["true_residual_mass"]
 
+		# Initialize relative residual mass
+		pseudo_ground_truth = self.get_ground_truth_data(running_time, data_path)
+		self.relative_residual_mass = residual_mass(ux_matrix=pseudo_ground_truth[self.ux_index],
+														uy_matrix=pseudo_ground_truth[self.uy_index])/self.true_residual_mass
+		with torch.no_grad():
 			while (self.relative_residual_mass <= self.residual_threshold) and (running_time <= self.training_config.prediction_end_time):
 				prediction_input = self.prepare_input_for_prediction(running_time, data_path, prediction_input)
 				normalized_input  = self._normalize(prediction_input, input_mean, input_std)
@@ -286,10 +302,7 @@ class Trainer:
 			# So, we need to step down the running time by the write interval outside the loop.
 		return round(running_time-time_step, self.training_config.round_to)
 
-	def save_model(self, model_name:str,
-				epochs:int=0, 
-				train_loss:float=0.0, 
-				val_loss:float=0.0) -> Path:
+	def save_model(self, model_name:str) -> Path:
 		'''
 		Parameters
 		----------
@@ -305,18 +318,19 @@ class Trainer:
 		'''
 		path = Path.joinpath(self.training_config.model_dir, model_name)
 		torch.save({
-			"epoch": epochs,
 			"model_state_dict": self.model.state_dict(),
 			"optimizer_state_dict": self.optimizer.state_dict(),
-			"train_loss": train_loss,
-			"val_loss": val_loss,
 			}, 
 			path
 		)
 		self.training_config.logger.debug(f"Model saved as {model_name} at {self.training_config.model_dir}")
 		return path
 
-	def load_model(self, model_name:str, load_optimizer:bool=False) -> torch.nn.Module:
+	def load_model(self, 
+			model_name:str, 
+			load_optimizer:bool=False,
+			learning_rate:float=1e-4
+			) -> torch.nn.Module:
 		"""
 		This is for transfer learning. We load the model from the saved model.
 		Epochs= 20
@@ -324,13 +338,18 @@ class Trainer:
 		path = Path.joinpath(self.training_config.model_dir, model_name)
 		checkpoint = torch.load(path, weights_only=True)
 		self.model.load_state_dict(checkpoint["model_state_dict"])
-		if load_optimizer:
+		if load_optimizer and "optimizer_state_dict" in checkpoint:
 			self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+			for param_group in self.optimizer.param_groups:
+				param_group["lr"] = learning_rate
 		self.training_config.logger.debug(f"Model loaded from {path}")
 		return self.model.to(self.device)
 	
-	def get_ground_truth_data(self, time_step:int|float, 
-							  data_path:Path=None) -> List[np.ndarray]:
+	def get_ground_truth_data(
+			self, 
+			time_step:int|float, 
+			data_path:Path=None
+		) -> List[np.ndarray]:
 		'''
 		Because in FVMN, we are only predicting the interior points, we need to add the boundary data to the model output.
 		Also, we need to calculate the residue. Hence, we need the true data for the time step.
@@ -459,9 +478,8 @@ class Trainer:
 		self.ux_matrix_prev = self.ux_matrix
 		self.t_matrix_prev = self.t_matrix
 
-		return relative_residual_mass
-
-
+		return relative_residual_mass		
+	
 	def prepare_input_for_prediction(self, time_step:int|float, 
 									 data_path:Path, 
 									 data:torch.Tensor=None) -> torch.Tensor:
@@ -511,6 +529,8 @@ class Trainer:
 			self.t_matrix_prev = ground_truth[self.t_index]
 			# self.true_residual_mass = residual_mass(ground_truth[self.ux_index], ground_truth[self.uy_index])
 
+			self.relative_residual_mass = residual_mass(ground_truth[self.ux_index], ground_truth[self.uy_index])/self.true_residual_mass
+			
 			if self.training_config.bc_type != "ground_truth":
 				ground_truth = self.training_config.hard_contraint_bc(ground_truth)
 
@@ -523,7 +543,7 @@ class Trainer:
 		##################### Saving the predicted values #####################
 		u_vector = np.concatenate([self.ux_matrix.reshape(-1,1, order="F"),
 									self.uy_matrix.reshape(-1,1, order="F")], axis=-1)
-		t_scalar = self.t_matrix.reshape(-1,1, order="F")
+		t_scalar = self.t_matrix.reshape(-1, order="F")
 		np.save(data_path / f"U_{time_step}_predicted.npy", u_vector)
 		np.save(data_path / f"T_{time_step}_predicted.npy", t_scalar)
 		self.training_config.logger.debug(f"Saved variables at {data_path}")
@@ -536,19 +556,27 @@ class Trainer:
 
 		return torch.from_numpy(data)
 
-def dynamic_epochs(switch_count:int):
+def dynamic_parameters(switch_count:int)-> Tuple[int, int]:
+	'''
+	Returns the number of epochs and cfd runs based on the switch count.
+	Args
+	----
+	switch_count: int:
+		The number of times ML-CFD switch has happened.
+	Returns
+	-------
+	epochs: int:
+		The number of epochs to train the model.
+	cfd_runs: int:
+		The number of cfd runs to perform.
+	'''
 	if switch_count % 10 == 0:
-		increment_factor = np.log(switch_count).item()
-		return int(2 + np.log(switch_count/10).item()**2)
-	return 10
+		increment_factor_epochs = np.log(switch_count).item()
+		increment_factor_cfd = np.log(switch_count**2).item()
+		return int(2 + increment_factor_epochs), int(10 + increment_factor_cfd)
+	return 2, 10
 
-def dynamic_CFD_runs(switch_count:int):
-	if switch_count % 10 == 0:
-		increment_factor = 1
-		return int(10 + (switch_count*increment_factor/10))
-	return 10
-
-def main( 
+def hybrid_training( 
 	openfoam_config:OpenfoamConfig, 
 	training_config:TrainingConfig,
 	network_type:torch.nn.Module=FVMNetwork,
@@ -575,7 +603,7 @@ def main(
 		model=model, 
 		optimizer=optimizer, 
 		loss_fn=loss_fn,
-		model_name="init_model.pth" # Set this to None if you don't want to use pre-trained model.
+		model_name= "init_model.pth" # Set this to None if you don't want to use pre-trained model.
 	)
 	# Create trainer instance
 	first_training = True
@@ -595,7 +623,7 @@ def main(
 		openfoam_utils.run_solver(
 			start_time=training_start_time, 
 			end_time=training_end_time,
-			save_to_numpy=False
+			save_to_numpy=True
 		)
 		cfd_end_time = timeit.default_timer()
 		if training_end_time >= trainer.training_config.prediction_end_time: break
@@ -603,7 +631,7 @@ def main(
 		dataset = dataset_type(
 			training_config=trainer.training_config,
 			first_training=first_training, 
-			start_time= round(training_end_time - 2*trainer.training_config.write_interval, 2), 
+			start_time= round(training_end_time - 3*trainer.training_config.write_interval, 2), 
 			end_time=training_end_time, 
 			time_step=trainer.training_config.write_interval
 		)
@@ -625,12 +653,21 @@ def main(
 		update_end_time = timeit.default_timer()
 
 		trainer.best_val_accuracy = float("inf") # Reset the best validation accuracy for transfer learning
-		trainer.relative_residual_mass = 1.0 # Reset the relative residual mass for transfer learning
-
 		# Before prediction, load the best model: because we are using the same instance of self.model for prediction, hence last trained parameters will be used.
-		model = trainer.load_model("best_model.pth", load_optimizer=True)
+		trainer.model, trainer.optimizer = load_from_state_dict(
+			model=trainer.model,
+			model_save_path=trainer.training_config.model_dir,
+			model_name="best_model.pth",
+			optimizer=trainer.optimizer,
+			learning_rate=1e-3
+		)
 
-		if trainer.training_config.epochs == 5000: trainer.save_model("init_model.pth")
+		if trainer.training_config.epochs == 5000: 
+			trainer.save_model("init_model.pth")
+			save_loss(
+				training_config=training_config,
+				save_initial_losses=True
+			)
 		
 		print("\nStarting prediction from: ", 
 			round(training_end_time+trainer.training_config.write_interval,2)
@@ -655,7 +692,6 @@ def main(
 		print("ML timesteps: ", round((running_time - training_end_time)/trainer.training_config.write_interval))
 		print("Switch count: ", switch_count)
 		switch_count += 1
-
 		print(f"Prediction ended at:{running_time}\n")
 
 		# Convert predicted numpy to foam
@@ -668,11 +704,10 @@ def main(
 		openfoam_config.logger.info(f"Converted numpy to foam: {numpyToFoam_string}")
 
 		# Transfer learning
-		trainer.training_config.epochs = dynamic_epochs(switch_count)
-		cfd_runs = dynamic_CFD_runs(switch_count)
+		# trainer.training_config.epochs, cfd_runs = dynamic_parameters(switch_count)
+		trainer.training_config.epochs = 10
+		cfd_runs = 10
 		cfd_timesteps += cfd_runs
-		# trainer.training_config.epochs = 2
-		# cfd_runs = 10
 		training_end_time = round(running_time + cfd_runs*trainer.training_config.write_interval,
 								  2)
 		# Just using last three time steps for transfer learning: 
@@ -681,22 +716,24 @@ def main(
 
 
 	framework_end_time = timeit.default_timer()
-	training_config.logger.info(f"Framework ended at {framework_end_time}")
-	training_config.logger.info(f"Total CFD Time: {cfd_times}")
-	training_config.logger.info(f"Total ML Time: {ml_times}")
-	training_config.logger.info(f"Total Update Time: {update_times}")
-	training_config.logger.info(f"Total Framework Time: {framework_end_time-framework_start_time}")
-	training_config.logger.info(f"CFD+ML+update times: {cfd_times+ml_times+update_times}")
-	training_config.logger.info(f"Total ML timesteps: {ml_timesteps}")
-	training_config.logger.info(f"Total CFD runs: {cfd_timesteps}")
-	training_config.logger.info(f"ML timesteps per cross-computation: {ml_timesteps/switch_count}")
+	print(f"Framework ended at {framework_end_time}")
+	print(f"Total CFD Time: {cfd_times}")
+	print(f"Total ML Time: {ml_times}")
+	print(f"Total Update Time: {update_times}")
+	print(f"Total Framework Time: {framework_end_time-framework_start_time}")
+	print(f"CFD+ML+update times: {cfd_times+ml_times+update_times}")
+	print(f"Total ML timesteps: {ml_timesteps}")
+	print(f"Total CFD runs: {cfd_timesteps}")
+	print(f"ML timesteps per cross-computation: {ml_timesteps/switch_count}")
+	print(f"Acceleration: {(ml_timesteps + cfd_timesteps)*(cfd_times/cfd_timesteps)/(ml_times + cfd_times + update_times)}")
+	save_loss(training_config=training_config)
 
 if __name__ == "__main__":
 	openfoam_config = OpenfoamConfig()
 	training_config = TrainingConfig()
 
 	# Run the main function
-	main(openfoam_config, training_config)
+	hybrid_training(openfoam_config, training_config)
 
 	# Start Prediction
 	# trainer = Trainer(training_config=training_config,

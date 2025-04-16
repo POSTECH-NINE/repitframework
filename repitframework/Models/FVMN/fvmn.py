@@ -3,7 +3,7 @@ from repitframework.config import TrainingConfig
 
 class FVMNetwork(torch.nn.Module):
     def __init__(self, training_config:TrainingConfig, vars_list:list=None,
-                 hidden_layers:int=9, hidden_size:int=512, activation:torch.nn.ReLU=None):
+                 hidden_layers:int=3, hidden_size:int=398, activation:torch.nn.ReLU=None):
         '''
         Args
         ---- 

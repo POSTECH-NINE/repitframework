@@ -78,7 +78,8 @@ class FVMNDataset(Dataset):
     def _is_present(self) -> bool:
         for var in self.vars:
             for time in self.time_list:
-                if not (self.data_path / f"{var}_{round(time, self.training_config.round_to)}.npy").exists():
+                var_path = self.data_path / f"{var}_{round(time, self.training_config.round_to)}.npy"
+                if not var_path.exists():
                     return False
         return True
     
@@ -179,14 +180,15 @@ class FVMNDataset(Dataset):
         window_shape = (3, 3)
         sliding_window = np.lib.stride_tricks.sliding_window_view(input_matrix, window_shape)
         x,y = window_shape[0] // 2, window_shape[1] // 2 
-        correlated_features = np.stack([
+        correlated_features = [
             sliding_window[:,:,x,y],
             sliding_window[:,:,x-1,y],
             sliding_window[:,:,x+1,y],
             sliding_window[:,:,x,y-1],
             sliding_window[:,:,x,y+1]
-        ], axis=-1)
-        return correlated_features.reshape(-1, 5, order="F")
+        ]
+        correlated_features = [data.reshape(-1, order="F") for data in correlated_features]
+        return np.stack(correlated_features, axis=-1)
     
     def _prepare_input(self, time) -> np.ndarray:
         '''
@@ -413,8 +415,16 @@ if __name__ == "__main__":
     start_time = 10.0
     end_time = 10.02
     time_step = 0.01
-    data = PhiDataset(training_config,start_time, end_time)
-    inputs , labels = data._prepare_inputs_and_labels()
-    print(inputs.shape, labels.shape, len(data))
+    dataset = FVMNDataset(
+        training_config=training_config,
+        first_training=False,
+        data_path=data_path,
+        start_time=start_time,
+        end_time=end_time,
+        time_step=time_step
+    )
+    inputs, labels = dataset._prepare_inputs_and_labels()
+    print(f"Inputs shape: {inputs.shape}")
+    print(f"Labels shape: {labels.shape}")
 
     
