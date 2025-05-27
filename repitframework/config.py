@@ -30,7 +30,7 @@ class BaseConfig:
 	model_dir.mkdir(parents=True, exist_ok=True)
 
 	# Logging Level
-	logger_level = logging.DEBUG
+	logger_level = logging.INFO
 
 	# Data parameters: Remember, if you calculating the residual, first vector should be U and last scalar should be T. 
 	data_vars:dict[str] = field(default_factory=lambda: {"scalars":["T"],"vectors":["U"]})
@@ -156,14 +156,14 @@ class TrainingConfig(BaseConfig):
 		self.learning_rate: float = 1e-3
 		self.residual_threshold: float = 5.0 # Adapted from the paper: Section 4.1; page 8
 		self.device: str = "cuda:1" if cuda.is_available() else "cpu"
-		self.optimizer = torch.optim.AdamW
+		self.optimizer = torch.optim.Adam
 		self.loss = torch.nn.MSELoss()
 		self.activation = torch.nn.ReLU
 
 		self.training_start_time = 10.0
 		self.training_end_time = 10.03
 		self.prediction_start_time = 10.03
-		self.prediction_end_time = 20.0
+		self.prediction_end_time = 110.0
 		self.bc_type:str = "enforced" # either "enforced" or "ground_truth"
 
 		self.log_file: Path = Path("Training.log")
@@ -171,20 +171,30 @@ class TrainingConfig(BaseConfig):
 		self._assign_temperature_profiles()
 
 	def log_metrics(self, key:str, value:int|float, metrics_type:str="prediction"):
-		logging_path = Path(self.model_dir, f"{metrics_type}_metrics.json")
+		# logging_path = Path(self.model_dir, f"{metrics_type}_metrics.json")
 
-		data = defaultdict(list)
-		if logging_path.exists():
-			try:
-				with open(logging_path, "r") as f:
-					data.update(json.load(f))
-			except json.JSONDecodeError:
-				pass
+		# data = defaultdict(list)
+		# if logging_path.exists():
+		# 	try:
+		# 		with open(logging_path, "r") as f:
+		# 			data.update(json.load(f))
+		# 	except json.JSONDecodeError:
+		# 		pass
 
-		data[key].append(value)	
+		# data[key].append(value)	
 		
-		with open(logging_path, "w") as f:
-			json.dump(data, f, indent=4)
+		# with open(logging_path, "w") as f:
+		# 	json.dump(data, f, indent=4)
+		# use .ndjson extension to signal newline-delimited JSON
+		logging_path = Path(self.model_dir) / f"{metrics_type}_metrics.ndjson"
+		logging_path.parent.mkdir(parents=True, exist_ok=True)
+		
+		# build a single JSON record for this metric
+		record = {"key": key, "value": value}
+		
+		# append one JSON object per line
+		with open(logging_path, "a") as f:
+			f.write(json.dumps(record) + "\n")
 	
 	def _assign_temperature_profiles(self,):
 		# TODO: for ease of use, it is hard-coded but think about making it dynamic.

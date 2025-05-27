@@ -4,6 +4,7 @@ import json
 
 from torch.utils.data import Dataset
 import numpy as np
+import torch
 from torch import Tensor, set_default_dtype, float64, tensor
 
 from repitframework.config import TrainingConfig
@@ -269,15 +270,15 @@ class FVMNDataset(Dataset):
         mean = np.mean(data, axis=0) if mean is None else mean
         std = np.std(data, axis=0) if std is None else std
         normalized_data = (data - mean)/std
-        return Tensor(normalized_data), mean, std
+        return torch.from_numpy(normalized_data).double(), mean, std
     
     @staticmethod
     def denormalize(data:Tensor, mean_, std_)->Tensor:
         if isinstance(data, Tensor): data = data.cpu().numpy()
         if data.shape[-1] == len(mean_): 
-            return Tensor(data * std_ + mean_)
+            return torch.from_numpy(data * std_ + mean_).double()
         skip_steps = len(mean_) // data.shape[-1]
-        return Tensor(data * std_[::skip_steps] + mean_[::skip_steps])
+        return torch.from_numpy(data * std_[::skip_steps] + mean_[::skip_steps]).double()
     
     def _prepare_inputs_and_labels(self) -> Tuple[Tensor, Tensor]:
         inputs, labels = [], []
@@ -304,7 +305,7 @@ class FVMNDataset(Dataset):
                         "true_residual_mass":true_residual_mass
                     }, f, indent=4
                     )
-            return Tensor(normalized_inputs), Tensor(normalized_labels)
+            return normalized_inputs, normalized_labels
         
         with open(metrics_save_path, "r") as f: metrics = json.load(f)
         input_MEAN = metrics["input_MEAN"]
@@ -315,7 +316,7 @@ class FVMNDataset(Dataset):
         normalized_inputs, *_ = self.normalize(inputs, input_MEAN, input_STD)
         normalized_labels, *_ = self.normalize(labels, label_MEAN, label_STD)
 
-        return Tensor(normalized_inputs), Tensor(normalized_labels)
+        return normalized_inputs, normalized_labels
     
     def _generate_intervals(self,):
         time_list = []

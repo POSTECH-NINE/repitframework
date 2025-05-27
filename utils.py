@@ -23,11 +23,12 @@ def load_from_state_dict(
     """
     checkpoint = torch.load(Path(model_save_path, model_name), weights_only=True)
     model.load_state_dict(checkpoint['model_state_dict'])
-    if 'optimizer_state_dict' in checkpoint:
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        for param_group in optimizer.param_groups:
-            param_group['lr'] = learning_rate
-    if 'scheduler_state_dict' in checkpoint:
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    is_optimizer_loaded = "False"
+    # if 'optimizer_state_dict' in checkpoint:
+    #     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #     for param_group in optimizer.param_groups:
+    #         param_group['lr'] = learning_rate
+    # if 'scheduler_state_dict' in checkpoint:
+    #     scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
     print(f"Model loaded from: {model_save_path/model_name} with LR: {learning_rate}")
     return model, optimizer

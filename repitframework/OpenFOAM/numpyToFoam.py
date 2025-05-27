@@ -98,7 +98,7 @@ def calculate_prgh(pressure_data:np.ndarray, temperature_data:np.ndarray) -> np.
 def include_all_features_NC(temperature_data:np.ndarray, 
 							latestML_time_dir:Path, 
 							velocity_data:np.ndarray,
-							use_true_phi:bool=False) -> bool:
+							adjust_phi:bool=True) -> bool:
 	
 	pressure_path = latestML_time_dir / "p"
 	assert pressure_path, '''You must have "pressure file" -- we are using pressure value from the latest CFD simulation;\n
@@ -135,13 +135,14 @@ def include_all_features_NC(temperature_data:np.ndarray,
 		# 	with open(file, "w") as f: 
 		# 		f.write(foam_data)
 	
-	if use_true_phi:
-		gt_phi_path = str(latestML_time_dir / "phi").replace("Solvers", "Assets")
-		gt_phi_path = Path(gt_phi_path.replace("natural_convection", "CFD_full_simulation"))
+	if adjust_phi:
+		# gt_phi_path = str(latestML_time_dir / "phi").replace("Solvers", "Assets")
+		# gt_phi_path = Path(gt_phi_path.replace("natural_convection", "CFD_full_simulation"))
 		# os.system(f"cp {gt_phi_path} {latestML_time_dir/'phi'}")
-		os.system(f"adjustPhiML -case {latestML_time_dir.parent} -time {latestML_time_dir.name}")
+		command_to_adjustPhi = ["adjustPhiML", "-case", latestML_time_dir.parent, "-time", latestML_time_dir.name]
+		return subprocess.run(command_to_adjustPhi, check=True, capture_output=True, text=True).stdout
 
-	return True
+	return "Done!"
 
 def format_number(x):
 	"""Format a number to 12 significant digits without scientific notation."""
@@ -348,7 +349,7 @@ def numpyToFoam(openfoam_config:OpenfoamConfig,
 		with open(openfoam_var_path, "w") as file:
 			file.write(foam_data)
 	
-	include_all_features_NC(temperature_data, latestML_time_dir, velocity_data, use_true_phi=True) #TODO: change the name for use_true_phi to correct_phi
+	output_string += include_all_features_NC(temperature_data, latestML_time_dir, velocity_data, adjust_phi=True) #TODO: change the name for use_true_phi to correct_phi
 	return output_string   
 
 	

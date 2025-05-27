@@ -87,6 +87,19 @@ def process_variable(
 			raise ValueError(f"Data dimension mismatch. Expected 1 or 2 but got {data_dict[var].shape}")
 	return data_dict
 
+def load_metrics(metrics_path:Path ) -> dict[str, list[float]]:
+	data = defaultdict(list)
+	# Read each JSON object (one per line) and bucket by key
+	with open(metrics_path, "r") as f:
+		if str(metrics_path).endswith(".ndjson"):
+			for line in f:
+				record = json.loads(line)
+				# record is like {"key": "loss", "value": 0.123}
+				data[record["key"]].append(record["value"])
+		else:
+			data = json.load(f)
+	return data
+
 def visualize_output(
 		base_config:BaseConfig,
 		timestamp:int|float,
@@ -152,10 +165,14 @@ def visualize_output(
 		
 	num_subplots = len(data_dict)
 	fig, ax = plt.subplots(1, num_subplots, figsize=(5*num_subplots, 5))
+
+	# Ensure ax is always a list-like object
+	ax = np.atleast_1d(ax)
+
 	for i,(key,value) in enumerate(data_dict.items()):
-		value = ax[i].imshow(value, origin="lower")
-		fig.colorbar(value, ax=ax[i])
-		ax[i].set_title(key)
+		value = ax[i].imshow(value, origin="lower", cmap="inferno")
+		# fig.colorbar(value, ax=ax[i]) # TODO: uncomment these two lines.
+		# ax[i].set_title(key)
 	fig.tight_layout()
 	fig.suptitle("At time={}s".format(timestamp))
 	if mode == "image":
@@ -409,10 +426,10 @@ def quantitative_analysis(
 	ax[0].set_title("Top Wall")
 	ax[0].set_xlabel("Timesteps")
 	ax[0].set_ylabel(save_name)
-	# if is_temp: 
-	# 	ax[0].set_ylim(292,304)
-	# else: 
-	# 	ax[0].set_ylim(-0.1,0.2)
+	if is_temp: 
+		ax[0].set_ylim(292,304)
+	else: 
+		ax[0].set_ylim(-0.1,0.2)
 	ax[0].margins(x=0)
 	
 	ax[1].plot(ground_truth_data["b1"], label="B1", linestyle="-", color="red")
@@ -425,8 +442,10 @@ def quantitative_analysis(
 	ax[1].grid()
 	ax[1].set_title("Bottom Wall")
 	ax[1].set_xlabel("Timesteps")
-	# if is_temp: 
-	# 	ax[1].set_ylim(290.5,293.5)
+	if is_temp: 
+		ax[1].set_ylim(290.5,293.5)
+	else:
+		ax[1].set_ylim(-0.1,0.04)
 	ax[1].set_ylabel(save_name)
 	ax[1].margins(x=0)
 
@@ -520,7 +539,7 @@ def plot_residual_change(
 
 	plt.figure(figsize=(10,4))
 	plt.plot(running_times, true_residual, ":k", label="Reference value")
-	plt.plot(running_times, relative_residual, "-b", label="RePIT-Framework", linewidth=0.5)
+	plt.plot(running_times, relative_residual, "-b", label="RePIT-Framework", linewidth=2)
 	plt.ylim(0.1,100)
 	# plt.xlim(10, 20)
 	# plt.xticks(x_ticks)
@@ -676,9 +695,8 @@ def save_loss(training_config:TrainingConfig,
 			  save_initial_losses:bool=False,
 			  merge_initial_losses:bool=False,
 			  save_path:Path="./"):
-	training_metrics_path = training_config.model_dir / "training_metrics.json"
-	with open(training_metrics_path, "r") as f:
-		metrics = json.load(f)
+	training_metrics_path = training_config.model_dir / "training_metrics.ndjson"
+	metrics = load_metrics(training_metrics_path)
 	
 	plots_dir = str(training_config.model_dir).replace("ModelDump", "plots")
 	plots_dir = Path(plots_dir) / "loss"
@@ -722,7 +740,7 @@ def save_loss(training_config:TrainingConfig,
 
 def plot_everything(
 		plot_start_time:float=10.0,
-		plot_end_time:float=110.0,
+		plot_end_time:float=110.0
 ):
 	base_config = BaseConfig()
 	training_config = TrainingConfig()
@@ -732,9 +750,10 @@ def plot_everything(
 	ground_truth_dir = str(solver_dir).replace("Solvers", "Assets")+ "_backup"
 	prediction_dir = str(solver_dir).replace("Solvers", "Assets")
 	plots_dir = str(solver_dir).replace("Solvers", "plots")
-	with open(model_dump_dir + "/prediction_metrics.json","r") as f:
-		metrics = json.load(f)
-	time_list = metrics["Running Time"]
+	# with open(model_dump_dir + "/prediction_metrics.json","r") as f:
+	# 	metrics = json.load(f)
+	metrics = load_metrics(model_dump_dir + "/prediction_metrics.ndjson")
+	time_list = metrics["Running Time"] 
 
 	# extended_time_list = [10.57,10.58,10.59,10.6,10.61,10.62]
 	# time_list.extend(extended_time_list)
@@ -772,17 +791,16 @@ def plot_everything(
 	still_comparisons(
 		prediction_dir=prediction_dir,
 		ground_truth_dir=ground_truth_dir,
-		time_list=[plot_start_time, plot_end_time],
+		time_list=[int((plot_start_time+plot_end_time)/2), plot_end_time],
 		temp_profiles=[training_config.left_wall_temperature, training_config.right_wall_temperature]
 	)
 	plot_residual_change(
 		running_times=time_list,
 		relative_residual=metrics["Relative Residual Mass"],
-		residual_limit=5,
+		residual_limit=5, ## <------------------------------------ change this
 		save_name="relative_residual",
 		save_path=plots_dir
 	)
 
 if __name__ == "__main__":
-
 	plot_everything(plot_start_time=10.0, plot_end_time=20.0)
