@@ -1,5 +1,6 @@
 from torch.utils.data import DataLoader, Subset, Dataset
 from typing import Tuple
+from sklearn.model_selection import train_test_split
 
 def train_val_split(
 		dataset: Dataset, 
@@ -21,7 +22,7 @@ def train_val_split(
 	data_size = len(dataset)
 	indices = list(range(data_size))
 	train_size = int(data_size * train_size)
-	# train_indices, val_indices = train_test_split(indices, test_size=0.2, random_state=1004)
+	# train_indices, val_indices = train_test_split(indices, test_size=1/3, random_state=1004)
 	train_indices = indices[:train_size]
 	val_indices = indices[train_size:]
 

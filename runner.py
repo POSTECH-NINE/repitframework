@@ -29,7 +29,7 @@ from repitframework.Metrics.ResidualNaturalConvection import (
 )
 from repitframework.Metrics.OperatorEmbeddings import compute_gradient, ceod_loss
 from repitframework.plot_utils import save_loss
-from utils import load_from_state_dict, freeze_layers
+from utils import freeze_layers, prepare_model_and_optimizer
 
 class Trainer:
 	def __init__(self, training_config:TrainingConfig, 
@@ -46,7 +46,7 @@ class Trainer:
 		# Load the model if model_name is provided
 		if model_name:
 			self.load_model(model_name, 
-				load_optimizer=True, 
+				load_optimizer=False, 
 				learning_rate=self.training_config.learning_rate)
 			self.training_config.epochs = 0 # To skip initial training for 5000 epochs and use the best saved model from this training.
 
@@ -78,9 +78,8 @@ class Trainer:
 			  val_loader:DataLoader, 
 			  epochs, freeze:bool) -> bool:
 		
-		if freeze: freeze_layers(self.model, num_layers=2)
-		# TODO: loaded the fresh instance of optimizer always (because loading from the saved optimizer state dict performed bad.)
-		self.optimizer = self.training_config.optimizer(self.model.parameters(), lr=self.training_config.learning_rate)
+		if freeze: 
+			self.model = freeze_layers(self.model, num_layers=2)
 		for epoch in tqdm(range(epochs), desc="Epochs", leave=False):
 			self.model.train()  # Set the model to training mode
 			train_loss = 0.0
@@ -303,8 +302,7 @@ class Trainer:
 		'''
 		path = Path.joinpath(self.training_config.model_dir, model_name)
 		torch.save({
-			"model_state_dict": self.model.state_dict(),
-			"optimizer_state_dict": self.optimizer.state_dict(),
+			"model_state_dict": self.model.state_dict()
 			}, 
 			path
 		)
@@ -327,6 +325,8 @@ class Trainer:
 			self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
 			for param_group in self.optimizer.param_groups:
 				param_group["lr"] = learning_rate
+		else:
+			self.optimizer.state.clear()  # Clear optimizer state if not loading optimizer
 		self.training_config.logger.debug(f"Model loaded from {path}")
 		return self.model.to(self.device)
 	
@@ -399,6 +399,7 @@ class Trainer:
 		assert time_step and data_path, "Time step and Data path are required!"
 			
 		if bc_type == "ground_truth":
+			data_path = Path(str(data_path) + "_backup")
 			ground_truth = self.get_ground_truth_data(time_step, data_path)
 
 			# Modeling predicted data: adding zero padding to the predicted data.
@@ -588,7 +589,7 @@ def hybrid_training(
 		model=model, 
 		optimizer=optimizer, 
 		loss=loss,
-		model_name= None # Set this to None if you don't want to use pre-trained model.
+		model_name= "init_model.pth" # Set this to None if you don't want to use pre-trained model.
 	)
 	# Create trainer instance
 	first_training = True
@@ -693,7 +694,7 @@ def hybrid_training(
 
 		# Transfer learning
 		# trainer.training_config.epochs, cfd_runs = dynamic_parameters(switch_count)
-		trainer.training_config.epochs = 2
+		trainer.training_config.epochs = 10
 		cfd_runs = 10
 		# if switch_count == 2: break
 		cfd_timesteps += cfd_runs
@@ -725,7 +726,7 @@ def hybrid_training(
 	training_config.logger.info(f"t_CFD: {cfd_times/cfd_timesteps}")
 	training_config.logger.info(f"Real Acceleration: {if_CFD_alone/(framework_end_time-framework_start_time)}\n\n")
 	training_config.logger.info("###############################################")
-	save_loss(training_config=training_config, merge_initial_losses=False)
+	# save_loss(training_config=training_config, merge_initial_losses=False)
 
 if __name__ == "__main__":
 	openfoam_config = OpenfoamConfig()

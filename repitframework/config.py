@@ -30,7 +30,7 @@ class BaseConfig:
 	model_dir.mkdir(parents=True, exist_ok=True)
 
 	# Logging Level
-	logger_level = logging.DEBUG
+	logger_level = logging.INFO
 
 	# Data parameters: Remember, if you calculating the residual, first vector should be U and last scalar should be T. 
 	data_vars:dict[str] = field(default_factory=lambda: {"scalars":["T"],"vectors":["U"]})
@@ -163,7 +163,7 @@ class TrainingConfig(BaseConfig):
 		self.training_start_time = 10.0
 		self.training_end_time = 10.03
 		self.prediction_start_time = 10.03
-		self.prediction_end_time = 20.0
+		self.prediction_end_time = 110.0
 		self.bc_type:str = "enforced" # either "enforced" or "ground_truth"
 
 		self.log_file: Path = Path("Training.log")
