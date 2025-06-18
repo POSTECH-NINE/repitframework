@@ -20,7 +20,7 @@ class BaseConfig:
 	metrics_dir:Path = Path(root_dir, "Metrics")
 	model_selector_dir:Path = Path(root_dir, "Models")
 	openfoam_dir:Path = Path(root_dir, "OpenFOAM")
-	solver_dir:Path = Path(root_dir, "Solvers","natural_convection_case1")
+	solver_dir:Path = Path(root_dir, "Solvers","natural_convection_case3")
 
 	assets_dir:Path = Path(root_dir, "Assets")
 	assets_path:Path = Path.joinpath(assets_dir, solver_dir.name)
@@ -30,7 +30,7 @@ class BaseConfig:
 	model_dir.mkdir(parents=True, exist_ok=True)
 
 	# Logging Level
-	logger_level = logging.INFO
+	logger_level = logging.DEBUG
 
 	# Data parameters: Remember, if you calculating the residual, first vector should be U and last scalar should be T. 
 	data_vars:dict[str] = field(default_factory=lambda: {"scalars":["T"],"vectors":["U"]})
@@ -155,15 +155,16 @@ class TrainingConfig(BaseConfig):
 		self.epochs: int = 5000
 		self.learning_rate: float = 1e-3
 		self.residual_threshold: float = 5.0 # Adapted from the paper: Section 4.1; page 8
-		self.device: str = "cuda:1" if cuda.is_available() else "cpu"
+		self.device: str = "cuda:0" if cuda.is_available() else "cpu"
 		self.optimizer = torch.optim.Adam
 		self.loss = torch.nn.MSELoss()
 		self.activation = torch.nn.ReLU
+		self.weight_decay: float = 1e-5
 
 		self.training_start_time = 10.0
 		self.training_end_time = 10.03
 		self.prediction_start_time = 10.03
-		self.prediction_end_time = 110.0
+		self.prediction_end_time = 20.0
 		self.bc_type:str = "enforced" # either "enforced" or "ground_truth"
 
 		self.log_file: Path = Path("Training.log")
@@ -257,6 +258,7 @@ class TrainingConfig(BaseConfig):
 			- Right wall is the cold wall
 		'''
 
+		# Because the problem domain is rotated 90 degrees; left goes to top and right goes to bottom.
 		top_wall_temperature = self.left_wall_temperature
 		bottom_wall_temperature = self.right_wall_temperature
 

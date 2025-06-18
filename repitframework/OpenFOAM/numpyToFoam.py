@@ -11,7 +11,6 @@ import Ofpp
 
 from repitframework.config import OpenfoamConfig, TrainingConfig
 from repitframework.OpenFOAM import OpenfoamUtils
-from repitframework.Models.FVMN.fvmn import ConvPhiNet
 
 torch.set_default_dtype(torch.float64)
 '''
@@ -33,35 +32,6 @@ def calculate_rho(pressure_data:np.ndarray, temperature_data: np.ndarray) -> np.
 
 	rho_idealgas = (pressure_data * mol_wt) / (gas_constant * temperature_data)
 	return rho_idealgas
-
-def calculate_phi(phi_model_path:Path, velocity_data:np.ndarray, metrics_path:Path=None) -> np.ndarray:
-	'''
-	We need to calculate phi using the model. 
-	'''
-	ux = velocity_data[:,0].reshape(200,200, order='F')
-	uy = velocity_data[:,1].reshape(200,200, order='F')
-	velocity = np.stack([ux, uy], axis=0)
-	velocity = velocity.reshape(1,2,200,200)
-
-	with open(metrics_path, "r") as f:
-		metrics = json.load(f)
-
-	phi_input_mean = np.array(metrics["phi_input_MEAN"])
-	phi_input_std = np.array(metrics["phi_input_STD"])
-	phi_label_mean = np.array(metrics["phi_label_MEAN"])
-	phi_label_std = np.array(metrics["phi_label_STD"])
-
-	velocity = (velocity - phi_input_mean) / phi_input_std
-	velocity = torch.from_numpy(velocity).to("cuda" if torch.cuda.is_available() else "cpu")
-	torch.cuda.empty_cache()
-	phi_model = ConvPhiNet()
-	phi_model.to("cuda" if torch.cuda.is_available() else "cpu")
-	phi_model.load_state_dict(torch.load(phi_model_path, weights_only=True))
-	phi_model.eval()
-	phi = phi_model(velocity)
-	phi = phi.cpu().detach().numpy()
-	phi = phi * phi_label_std + phi_label_mean
-	return phi.reshape(-1, order='F')
 	
 
 def calculate_prgh(pressure_data:np.ndarray, temperature_data:np.ndarray) -> np.ndarray:

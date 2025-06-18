@@ -395,7 +395,7 @@ if __name__ == "__main__":
     openfoam_config = OpenfoamConfig()
     openfoam_utils = OpenfoamUtils(openfoam_config)
     start_time = timeit.default_timer()
-    openfoam_utils.run_solver(start_time=10.0, end_time=20.0, write_interval=0.01,save_to_numpy=False, del_dirs=False)
+    openfoam_utils.run_solver(start_time=10.0, end_time=10.03, write_interval=0.01,save_to_numpy=True, del_dirs=False)
     # openfoam_utils.parse_to_numpy(
     #     openfoam_config, 
     #     start_time=100.0, 
@@ -403,5 +403,5 @@ if __name__ == "__main__":
     #     solver_dir=f"/home/shilaj/repitframework/repitframework/Solvers/natural_convection_case4",
     #     save_path=f"/home/shilaj/repitframework/repitframework/Assets/natural_convection_case4_backup",
     # )
-    # end_time = timeit.default_timer()
-    # print(f"Time taken: {end_time-start_time} seconds")
+    end_time = timeit.default_timer()
+    print(f"Time taken: {end_time-start_time} seconds")

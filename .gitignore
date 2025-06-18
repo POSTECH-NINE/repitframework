@@ -7,7 +7,7 @@ repitframework/plots/*
 .vscode/
 **/__pycache__
 repitframework.egg-info/
-repitframework/Solvers/**/[0-9]/       # Ignore integer directories
-repitframework/Solvers/**/[0-9]*.[0-9]*/ # Ignore float directories
-!repitframework/Solvers/**/0      # Except this directory
-epitframework/Solvers/
+**/[0-9]/       # Ignore integer directories
+**/[0-9]*.[0-9]*/ # Ignore float directories
+!/**/0/      # Except this directory
+!/**/10/

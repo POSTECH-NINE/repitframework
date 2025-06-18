@@ -41,7 +41,9 @@ class Trainer:
 		self.device = training_config.device
 		self.model = model
 		self.model.to(self.device)
-		self.optimizer:torch.optim.Adam = optimizer(self.model.parameters(), lr=self.training_config.learning_rate)
+		self.optimizer:torch.optim.Adam = optimizer(
+			self.model.parameters(), 
+			lr=self.training_config.learning_rate)
 
 		# Load the model if model_name is provided
 		if model_name:
@@ -326,7 +328,8 @@ class Trainer:
 			for param_group in self.optimizer.param_groups:
 				param_group["lr"] = learning_rate
 		else:
-			self.optimizer.state.clear()  # Clear optimizer state if not loading optimizer
+			trainable_params = filter(lambda p: p.requires_grad, self.model.parameters())
+			self.optimizer = self.training_config.optimizer(trainable_params, lr=learning_rate)
 		self.training_config.logger.debug(f"Model loaded from {path}")
 		return self.model.to(self.device)
 	
@@ -562,27 +565,34 @@ def dynamic_parameters(switch_count:int)-> Tuple[int, int]:
 		return int(2 + increment_factor_epochs), int(10 + increment_factor_cfd)
 	return 2, 10
 
+# TODO: this is just to test the relative loss effectiveness of the model.
+def relative_loss(pred:torch.Tensor, true:torch.Tensor) -> torch.Tensor:
+	'''
+	Calculates the relative loss between the predicted and true values.
+	This is just to test the relative loss effectiveness of the model.
+	'''
+	return torch.mean(torch.abs(pred - true) / (torch.abs(true) + 1e-16))
+
 def hybrid_training( 
 	openfoam_config:OpenfoamConfig, 
 	training_config:TrainingConfig,
 	network_type:torch.nn.Module=FVMNetwork,
 	dataset_type:Dataset=FVMNDataset,
 	) -> None:
+
 	
+
 	# Variables:
 	# Training
 	training_start_time = training_config.training_start_time
 	training_end_time = training_config.training_end_time
 	running_time = training_start_time
 	optimizer = training_config.optimizer
-	loss = training_config.loss
+	loss = training_config.loss # TODO: Use relative_loss for testing the relative loss effectiveness of the model.
 
 	# Create model instance
 	model = network_type(training_config)
 	openfoam_utils = OpenfoamUtils(openfoam_config)
-
-	##################### RePIT: START #####################
-	framework_start_time = timeit.default_timer()
 
 	trainer = Trainer(
 		training_config=training_config, 
@@ -602,7 +612,11 @@ def hybrid_training(
 	switch_count = 0
 	ml_timesteps = 0
 	cfd_timesteps = 0
-	training_config.logger.info(f"Framework started at {timeit.default_timer()}")
+
+	##################### RePIT: START #####################
+	framework_start_time = timeit.default_timer()
+
+	training_config.logger.info(f"Framework started at {framework_start_time}")
 	while running_time < training_config.prediction_end_time:
 		# Run CFD first:
 		cfd_start_time = timeit.default_timer()
@@ -633,7 +647,7 @@ def hybrid_training(
 			train_loader, 
 			val_loader, 
 			trainer.training_config.epochs,
-			freeze=True
+			freeze=not first_training
 		)
 		update_end_time = timeit.default_timer()
 
@@ -657,6 +671,7 @@ def hybrid_training(
 				training_config=training_config,
 				save_initial_losses=True
 			)
+			framework_start_time = timeit.default_timer() # Reset the framework start time for the next iteration.
 		
 		print("\nStarting prediction from: ", 
 			round(training_end_time+trainer.training_config.write_interval,2)
@@ -694,7 +709,7 @@ def hybrid_training(
 
 		# Transfer learning
 		# trainer.training_config.epochs, cfd_runs = dynamic_parameters(switch_count)
-		trainer.training_config.epochs = 10
+		trainer.training_config.epochs = 2
 		cfd_runs = 10
 		# if switch_count == 2: break
 		cfd_timesteps += cfd_runs
@@ -704,9 +719,9 @@ def hybrid_training(
 		training_start_time = round(training_end_time - 3*trainer.training_config.write_interval, 2)
 		first_training = False
 
-
 	framework_end_time = timeit.default_timer()
 	training_config.logger.info(f"\n\nFramework ended at {framework_end_time}")
+
 	training_config.logger.info(f"Transfer learning epochs: {trainer.training_config.epochs}")
 	training_config.logger.info(f"Relative Residual Mass: {trainer.training_config.residual_threshold}\n")
 	training_config.logger.info(f"Total CFD Time: {cfd_times}")
@@ -715,6 +730,7 @@ def hybrid_training(
 	training_config.logger.info(f"Total Framework Time: {framework_end_time-framework_start_time}")
 	training_config.logger.info(f"Total ML timesteps: {ml_timesteps}")
 	training_config.logger.info(f"Total CFD runs: {cfd_timesteps}")
+	training_config.logger.info(f"Total Switch Count: {switch_count}")
 
 	if_CFD_alone = (ml_timesteps + cfd_timesteps)*(cfd_times/cfd_timesteps)
 	training_config.logger.info("###############################################")
@@ -724,9 +740,10 @@ def hybrid_training(
 	training_config.logger.info(f"ML timesteps per cross-computation: {ml_timesteps/switch_count}")
 	training_config.logger.info(f"t_ML: {ml_times/ml_timesteps}")
 	training_config.logger.info(f"t_CFD: {cfd_times/cfd_timesteps}")
+	training_config.logger.info(f"t_update: {update_times/switch_count}")
 	training_config.logger.info(f"Real Acceleration: {if_CFD_alone/(framework_end_time-framework_start_time)}\n\n")
 	training_config.logger.info("###############################################")
-	# save_loss(training_config=training_config, merge_initial_losses=False)
+	save_loss(training_config=training_config, merge_initial_losses=True)
 
 if __name__ == "__main__":
 	openfoam_config = OpenfoamConfig()

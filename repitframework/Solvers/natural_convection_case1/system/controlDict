@@ -18,11 +18,11 @@ application     buoyantFoam;
 
 startFrom       latestTime;
 
-startTime       109.75;
+startTime       19.98;
 
 stopAt          endTime;
 
-endTime         109.85;
+endTime         20.08;
 
 deltaT          0.1;
 
@@ -34,7 +34,7 @@ purgeWrite      0;
 
 writeFormat     ascii;
 
-writePrecision  12;
+writePrecision  17;
 
 writeCompression off;
 
