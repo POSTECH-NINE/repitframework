@@ -16,21 +16,47 @@ import seaborn as sns
 
 # 1) Set Seaborn theme for “paper” context (smaller labels, ticks)
 sns.set_theme(
-    context="paper",         # scales all elements for print size
-    style="ticks",           # minimal grid lines, ticks on all sides
-    palette="colorblind",    # colorblind-friendly qualitative palette
-    font="serif",            # use serif fonts for better readability in print
-    font_scale=1.1,          # slightly larger text
+	context="talk",                # Large, readable fonts for presentations/papers
+	style="whitegrid",             # Clean grid background for clarity
+	palette="colorblind",          # Vibrant, colorblind-friendly palette
+	font="DejaVu Serif",           # Professional serif font (widely available)
+	font_scale=1.4                 # Large font scaling for all elements
 )
 
-# 2) Tweak Matplotlib rcParams as needed
+# Matplotlib rcParams for bold, clear, and consistent visuals
 plt.rcParams.update({
-    "axes.linewidth": 0.8,    # thinner axes lines
-    "grid.linestyle": "--",   # dashed grid lines
-    "grid.alpha": 0.3,        # very light grid
-    "legend.frameon": False,  # no box around legend
-    "figure.dpi": 300,        # high resolution for publication
-    "savefig.format": "pdf",  # vector output
+	"axes.linewidth": 2,           # Bold axes lines
+	"axes.edgecolor": "black",
+	"axes.labelweight": "bold",
+	"axes.titlesize": 20,          # Large, bold titles
+	"axes.labelsize": 18,          # Large axis labels
+	"xtick.labelsize": 16,
+	"ytick.labelsize": 16,
+	"xtick.direction": "in",       # Ticks inside for scientific style
+	"ytick.direction": "in",
+	"xtick.major.size": 7,
+	"ytick.major.size": 7,
+	"xtick.minor.size": 4,
+	"ytick.minor.size": 4,
+	"xtick.major.width": 2,
+	"ytick.major.width": 2,
+	"xtick.minor.width": 1,
+	"ytick.minor.width": 1,
+	"grid.linestyle": "--",        # Dashed grid for readability
+	"grid.alpha": 0.5,
+	"legend.frameon": True,        # Boxed legend for clarity
+	"legend.framealpha": 0.95,
+	"legend.fancybox": True,
+	"legend.fontsize": 15,
+	"lines.linewidth": 3,          # Bold lines for all plots
+	"lines.markersize": 8,
+	"figure.dpi": 300,             # High-res for screen and print
+	"savefig.dpi": 300,
+	"savefig.format": "png",       # Use "pdf" for vector output if needed
+	"figure.facecolor": "white",
+	"axes.facecolor": "white",
+	"pdf.fonttype": 42,            # Editable fonts in PDF
+	"ps.fonttype": 42
 })
 
 warning_string = '''\n
@@ -446,10 +472,10 @@ def quantitative_analysis(
 	ax[0].set_title("Top Wall")
 	ax[0].set_xlabel("Timesteps")
 	ax[0].set_ylabel(save_name)
-	if is_temp: 
-		ax[0].set_ylim(292,304)
-	else: 
-		ax[0].set_ylim(-0.1,0.2)
+	# if is_temp: 
+	# 	ax[0].set_ylim(292,304)
+	# else: 
+	# 	ax[0].set_ylim(-0.1,0.2)
 	ax[0].margins(x=0)
 	
 	ax[1].plot(ground_truth_data["b1"], label="B1", linestyle="-", color="red")
@@ -462,10 +488,10 @@ def quantitative_analysis(
 	ax[1].grid()
 	ax[1].set_title("Bottom Wall")
 	ax[1].set_xlabel("Timesteps")
-	if is_temp: 
-		ax[1].set_ylim(290.5,293.5)
-	else:
-		ax[1].set_ylim(-0.1,0.04)
+	# if is_temp: 
+	# 	ax[1].set_ylim(290.5,293.5)
+	# else:
+	# 	ax[1].set_ylim(-0.1,0.04)
 	ax[1].set_ylabel(save_name)
 	ax[1].margins(x=0)
 
@@ -551,21 +577,21 @@ def plot_MAE(
 	plt.savefig(plots_path / f"{var_name}_MAE.png", bbox_inches='tight')
 	plt.close()
 	
-    # Plot the MSE values
+	# Plot the MSE values
 	plt.figure(figsize=(8, 5))
 	plt.plot(pred_time_list, MeanAE_list, label="MeanAE Over Time", color="blue", linewidth=2)
 	# Highlight the max AE point
 	max_MeanAE_time_step = pred_time_list[np.argmax(MeanAE_list)]
 	plt.scatter(max_MeanAE_time_step, max(MeanAE_list), color="red", label=f"MeanAE: {max(MeanAE_list):.3f} at t={max_MeanAE_time_step:.2f}")
 	
-    # Labels and title
+	# Labels and title
 	plt.xlabel("Timestamps")
 	plt.ylabel("Mean Absolute Error")
 	plt.title(var_name)
 	plt.legend()
 	plt.grid(True)
 	plt.savefig(plots_path / f"{var_name}_MeanAE.png", bbox_inches='tight'); plt.close()
-    
+	
 
 def plot_residual_change(
 		running_times:list, 
@@ -590,6 +616,46 @@ def plot_residual_change(
 	plt.title(f"Relative residual mass limit: {residual_limit}")
 	plt.tight_layout()
 	plt.savefig(f"{save_path}/{save_name}.png")
+
+def plot_L2_error(
+	pred_time_list: list[float],
+	ground_truth_dir: Path,
+	prediction_dir: Path,
+	var_name: str = "temperature"
+):
+	"""
+	Plots the relative L2 error over time for the given variable.
+	"""
+	vars_dict = {
+		"velocity-x": "U",
+		"temperature": "T",
+		"U_x": "U"
+	}
+	l2_errors = []
+	for timestamp in pred_time_list:
+		gt = np.load(ground_truth_dir / f"{vars_dict[var_name]}_{timestamp}.npy")
+		pred = np.load(prediction_dir / f"{vars_dict[var_name]}_{timestamp}_predicted.npy")
+		if var_name in ["velocity-x", "U_x"]:
+			gt = gt[:, 0]
+			pred = pred[:, 0]
+		elif var_name == "temperature":
+			gt = gt.flatten()
+			pred = pred.flatten()
+		# Relative L2 error
+		l2 = np.linalg.norm(gt - pred) / (np.linalg.norm(gt) + 1e-12)
+		l2_errors.append(l2)
+	# Plot
+	plt.figure(figsize=(8, 5))
+	plt.plot(pred_time_list, l2_errors, label="Relative L2 Error", color="purple", linewidth=2)
+	plt.xlabel("Timestamps")
+	plt.ylabel("Relative L2 Error")
+	plt.title(f"L2 Error ({var_name})")
+	plt.legend()
+	plt.grid(True)
+	plots_path = Path(str(prediction_dir).replace("Assets", "plots"))
+	plots_path.mkdir(parents=True, exist_ok=True)
+	plt.savefig(plots_path / f"{var_name}_L2_error.png", bbox_inches='tight')
+	plt.close()
 
 # def still_comparisons(
 # 		prediction_dir:Path|str,
@@ -731,6 +797,215 @@ def still_comparisons(
 	plt.savefig(plots_path / "still_comparisons.png", bbox_inches='tight')
 	plt.close()
 
+def plot_streamlines_comparison(
+	data_path_1,
+	data_path_2,
+	ground_truth_path,
+	t,
+	save_path=None
+):
+	"""
+	Plot streamlines for two prediction configurations side by side (or just one if data_path_2 is None).
+	Args:
+		data_path_1: str, directory containing U_{t}_predicted.npy for first prediction
+		data_path_2: str or None, directory for second prediction (can be None)
+		ground_truth_path: str, directory containing ground truth U_{t}.npy
+		t: float or int, time step (e.g., 20.0)
+		case1_label: str, label for first prediction
+		case2_label: str, label for second prediction
+	"""
+	# --- Load ground truth ---
+	U_true = np.load(os.path.join(ground_truth_path, f"U_{t}.npy"))
+	Ux_true = U_true[:, 0].reshape(200, 200)
+	Uy_true = U_true[:, 1].reshape(200, 200)
+
+	# --- Helper to load prediction (with fallback) ---
+	def load_pred_U(data_path, t):
+		pred_file = os.path.join(data_path, f"U_{t}_predicted.npy")
+		if not os.path.exists(pred_file):
+			pred_file = os.path.join(data_path, f"U_{t}.npy")
+		return np.load(pred_file)
+
+	# --- Load prediction 1 ---
+	U_pred1 = load_pred_U(data_path_1, t)
+	Ux_pred1 = U_pred1[:, 0].reshape(200, 200)
+	Uy_pred1 = U_pred1[:, 1].reshape(200, 200)
+
+	# --- Load prediction 2 if provided ---
+	has_second = data_path_2 is not None and data_path_2 != ""
+	if has_second:
+		U_pred2 = load_pred_U(data_path_2, t)
+		Ux_pred2 = U_pred2[:, 0].reshape(200, 200)
+		Uy_pred2 = U_pred2[:, 1].reshape(200, 200)
+
+	# --- Prepare grid ---
+	X = np.linspace(0, 199, 200, dtype=int)
+	Y = np.linspace(0, 199, 200, dtype=int)
+	X, Y = np.meshgrid(X, Y)
+
+	# --- Colors ---
+	gt_color = "#20B2AA"      # Teal for ground truth
+	pred1_color = "#D81B60"   # Magenta for pred1
+	pred2_color = "#2B34A7"   # Green for pred2
+
+	# --- Plot ---
+	if has_second:
+		fig, axs = plt.subplots(1, 2, figsize=(16, 7))
+		# Prediction 1
+		axs[0].streamplot(X, Y, Ux_true, Uy_true, color=gt_color, linewidth=1.5, density=2, arrowsize=1.2)
+		axs[0].streamplot(X, Y, Ux_pred1, Uy_pred1, color=pred1_color, linewidth=1.5, density=2, arrowsize=1.2)
+		axs[0].set_title(f"Streamlines @ t={t}")
+		axs[0].legend([
+			plt.Line2D([0], [0], color=gt_color, lw=2, label="True"),
+			plt.Line2D([0], [0], color=pred1_color, lw=2, label="Pred.")
+		], ["True", "Pred."], loc="upper right")
+		axs[0].set_aspect('equal')
+		axs[0].set_xticks([]); axs[0].set_yticks([])
+
+		# Prediction 2
+		axs[1].streamplot(X, Y, Ux_true, Uy_true, color=gt_color, linewidth=1.5, density=2, arrowsize=1.2)
+		axs[1].streamplot(X, Y, Ux_pred2, Uy_pred2, color=pred2_color, linewidth=1.5, density=2, arrowsize=1.2)
+		axs[1].set_title(f"Streamlines @ t={t}")
+		axs[1].legend([
+			plt.Line2D([0], [0], color=gt_color, lw=2, label="True"),
+			plt.Line2D([0], [0], color=pred2_color, lw=2, label="Pred.")
+		], ["True", "Pred."], loc="upper right")
+		axs[1].set_aspect('equal')
+		axs[1].set_xticks([]); axs[1].set_yticks([])
+
+		plt.tight_layout()
+	else:
+		plt.figure(figsize=(8, 7))
+		plt.streamplot(X, Y, Ux_true, Uy_true, color=gt_color, linewidth=1.5, density=2, arrowsize=1.2)
+		plt.streamplot(X, Y, Ux_pred1, Uy_pred1, color=pred1_color, linewidth=1.5, density=2, arrowsize=1.2)
+		plt.title(f"Streamlines @ t={t}")
+		plt.legend([
+			plt.Line2D([0], [0], color=gt_color, lw=2, label="True"),
+			plt.Line2D([0], [0], color=pred1_color, lw=2, label="Pred.")
+		], ["True", "Pred."], loc="upper right")
+		plt.gca().set_aspect('equal')
+		plt.xticks([]); plt.yticks([])
+		plt.tight_layout()
+	if save_path:
+		plt.savefig(f"{save_path}/streamlines_comparison_{t}.png", bbox_inches='tight', dpi=300)
+
+def plot_spectral_analysis(
+	prediction_dir: str,
+	ground_truth_dir: str,
+	timestep: float,
+	save_path: str = None
+):
+	"""
+	Plot spectral (energy) analysis for velocity and temperature fields.
+	Args:
+		Ux_true, Ux_pseudo, Uy_true, Uy_pseudo, T_true, T_pseudo: 2D arrays (shape: [ny, nx])
+		save_path: if provided, saves the figure to this path
+		title_prefix: optional string to prepend to plot titles
+	"""
+	U_true = np.load(f"{ground_truth_dir}/U_{timestep}.npy")
+	Ux_true = U_true[:, 0].reshape(200, 200)
+	Uy_true = U_true[:, 1].reshape(200, 200)
+	T_true = np.load(f"{ground_truth_dir}/T_{timestep}.npy").reshape(200, 200)
+
+	if os.path.exists(f"{prediction_dir}/U_{timestep}_predicted.npy"):
+		U_pseudo = np.load(f"{prediction_dir}/U_{timestep}_predicted.npy")
+		T_pseudo = np.load(f"{prediction_dir}/T_{timestep}_predicted.npy").reshape(200, 200)
+	else:
+		U_pseudo = np.load(f"{prediction_dir}/U_{timestep}.npy")
+		T_pseudo = np.load(f"{prediction_dir}/T_{timestep}.npy").reshape(200, 200)
+	Ux_pseudo = U_pseudo[:, 0].reshape(200, 200)
+	Uy_pseudo = U_pseudo[:, 1].reshape(200, 200)
+	# --- Ensure data is 2D arrays ---
+	if Ux_true.ndim != 2 or Ux_pseudo.ndim != 2 or Uy_true.ndim != 2 or Uy_pseudo.ndim != 2 or T_true.ndim != 2 or T_pseudo.ndim != 2:
+		raise ValueError("Input arrays must be 2D (shape: [200, 200])")
+
+	# --- Compute FFTs ---
+	fft_ux_true = np.fft.fft2(Ux_true)
+	fft_ux_pseudo = np.fft.fft2(Ux_pseudo)
+	fft_uy_true = np.fft.fft2(Uy_true)
+	fft_uy_pseudo = np.fft.fft2(Uy_pseudo)
+	fft_T_true = np.fft.fft2(T_true)
+	fft_T_pseudo = np.fft.fft2(T_pseudo)
+
+	# --- Energy ---
+	E_vel_true = np.abs(fft_ux_true)**2 + np.abs(fft_uy_true)**2
+	E_vel_pseudo = np.abs(fft_ux_pseudo)**2 + np.abs(fft_uy_pseudo)**2
+	E_T_true = np.abs(fft_T_true)**2
+	E_T_pseudo = np.abs(fft_T_pseudo)**2
+
+	# --- Shift ---
+	E_vel_true = np.fft.fftshift(E_vel_true)
+	E_vel_pseudo = np.fft.fftshift(E_vel_pseudo)
+	E_T_true = np.fft.fftshift(E_T_true)
+	E_T_pseudo = np.fft.fftshift(E_T_pseudo)
+
+	# --- Radial Spectrum ---
+	def radial_spectrum(E: np.ndarray) -> np.ndarray:
+		nx, ny = E.shape
+		cx, cy = nx // 2, ny // 2
+		y, x = np.indices((nx, ny))
+		r = np.sqrt((x - cx)**2 + (y - cy)**2).astype(int)
+		tbin = np.bincount(r.ravel(), E.ravel())
+		nr = np.bincount(r.ravel())
+		return tbin / (nr + 1e-10)
+
+	E_vel_true_radial = radial_spectrum(E_vel_true)
+	E_vel_pseudo_radial = radial_spectrum(E_vel_pseudo)
+	E_T_true_radial = radial_spectrum(E_T_true)
+	E_T_pseudo_radial = radial_spectrum(E_T_pseudo)
+
+	k = np.arange(len(E_T_true_radial))
+
+	# --- Plotting ---
+	fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+	fig.suptitle(f"Spectral Energy Analysis: RePIT vs CFD", fontsize=18, fontweight='bold')
+
+	# Velocity Spectrum (Difference)
+	axs[0, 0].plot(k, E_vel_pseudo_radial - E_vel_true_radial, label='RePIT - CFD', color='#0072B2')
+	axs[0, 0].set_title("Δ Velocity Energy Spectrum")
+	axs[0, 0].set_xlabel("Wavenumber (k)")
+	axs[0, 0].set_ylabel("Δ Energy")
+	axs[0, 0].set_yscale("log")
+	axs[0, 0].grid(True, alpha=0.4)
+	axs[0, 0].legend()
+	axs[0, 0].annotate("Positive: RePIT > CFD\nNegative: RePIT < CFD", xy=(0.7, 0.1), xycoords='axes fraction', fontsize=10, color='gray')
+
+	# Temperature Spectrum (Difference)
+	axs[0, 1].plot(k, E_T_pseudo_radial - E_T_true_radial, label='RePIT - CFD', color='#D55E00')
+	axs[0, 1].set_title("Δ Temperature Energy Spectrum")
+	axs[0, 1].set_xlabel("Wavenumber (k)")
+	axs[0, 1].set_ylabel("Δ Energy")
+	axs[0, 1].set_yscale("log")
+	axs[0, 1].grid(True, alpha=0.4)
+	axs[0, 1].legend()
+	axs[0, 1].annotate("Positive: RePIT > CFD\nNegative: RePIT < CFD", xy=(0.7, 0.1), xycoords='axes fraction', fontsize=10, color='gray')
+
+	# Velocity Spectrum (Ratio)
+	axs[1, 0].plot(k, E_vel_pseudo_radial / (E_vel_true_radial + 1e-12), label='RePIT / CFD', color='#009E73')
+	axs[1, 0].axhline(1, color='gray', linestyle='--', linewidth=1)
+	axs[1, 0].set_title("Velocity Energy Ratio (RePIT/CFD)")
+	axs[1, 0].set_xlabel("Wavenumber (k)")
+	axs[1, 0].set_ylabel("Energy Ratio")
+	axs[1, 0].set_yscale("log")
+	axs[1, 0].grid(True, alpha=0.4)
+	axs[1, 0].legend()
+
+	# Temperature Spectrum (Ratio)
+	axs[1, 1].plot(k, E_T_pseudo_radial / (E_T_true_radial + 1e-12), label='RePIT / CFD', color='#CC79A7')
+	axs[1, 1].axhline(1, color='gray', linestyle='--', linewidth=1)
+	axs[1, 1].set_title("Temperature Energy Ratio (RePIT/CFD)")
+	axs[1, 1].set_xlabel("Wavenumber (k)")
+	axs[1, 1].set_ylabel("Energy Ratio")
+	axs[1, 1].set_yscale("log")
+	axs[1, 1].grid(True, alpha=0.4)
+	axs[1, 1].legend()
+
+	plt.tight_layout()
+
+	if save_path is not None:
+		save_path = os.path.join(save_path, f"spectral_analysis_{timestep}.png")
+		plt.savefig(save_path, bbox_inches='tight')
+
 def save_loss(training_config:TrainingConfig,
 			  save_initial_losses:bool=False,
 			  merge_initial_losses:bool=False,
@@ -780,7 +1055,8 @@ def save_loss(training_config:TrainingConfig,
 
 def plot_everything(
 		plot_start_time:float=10.0,
-		plot_end_time:float=110.0
+		plot_end_time:float=110.0,
+		residual_limit:float=5.0
 ):
 	base_config = BaseConfig()
 	training_config = TrainingConfig()
@@ -828,6 +1104,19 @@ def plot_everything(
 		save_name=save_name_list[-1],
 		plot_prediction_only=False
 	)
+
+	plot_L2_error(
+		pred_time_list=time_list,
+		ground_truth_dir=Path(ground_truth_dir),
+		prediction_dir=Path(prediction_dir),
+		var_name=save_name_list[0]
+	)
+	plot_L2_error(
+		pred_time_list=time_list,
+		ground_truth_dir=Path(ground_truth_dir),
+		prediction_dir=Path(prediction_dir),
+		var_name=save_name_list[-1]
+	)
 	still_comparisons(
 		prediction_dir=prediction_dir,
 		ground_truth_dir=ground_truth_dir,
@@ -837,10 +1126,62 @@ def plot_everything(
 	plot_residual_change(
 		running_times=time_list,
 		relative_residual=metrics["Relative Residual Mass"],
-		residual_limit=5, ## <------------------------------------ change this
+		residual_limit=residual_limit, ## <------------------------------------ change this
 		save_name="relative_residual",
 		save_path=plots_dir
 	)
 
+	plot_streamlines_comparison(
+		data_path_1=prediction_dir,
+		data_path_2=None,  # Set to None if you don't have a second prediction
+		ground_truth_path=ground_truth_dir,
+		t=plot_end_time,
+		save_path=plots_dir
+	)
+
+	plot_spectral_analysis(
+		prediction_dir=prediction_dir,
+		ground_truth_dir=ground_truth_dir,
+		timestep=plot_end_time,
+		save_path=plots_dir
+	)
+
+def transfer_to_required_directory(dir_name:str, case:str, timesteps:int=10000):
+	destination_dir = f"/home/shilaj/repitframework/repitframework/Assets/natural_convection_{case}_study/{timesteps}timesteps/{dir_name}"
+
+	if not os.path.exists(destination_dir):
+		os.makedirs(destination_dir)
+
+	today_date = datetime.now().strftime("%Y-%m-%d")
+	solver_name = Path(f"natural_convection_{case}")
+	logs_path = Path("/home/shilaj/repitframework/repitframework/logs", solver_name, today_date, "Training.log")
+	pred_metrics_path = Path("/home/shilaj/repitframework/repitframework/ModelDump", solver_name, "prediction_metrics.ndjson")
+	training_metrics_path = Path("/home/shilaj/repitframework/repitframework/ModelDump", solver_name, "training_metrics.ndjson")
+	plots_path = Path("/home/shilaj/repitframework/repitframework/plots", solver_name)
+	assets_path = Path("/home/shilaj/repitframework/repitframework/Assets", solver_name)
+	
+	files_to_move = [
+		logs_path,
+		pred_metrics_path,
+		training_metrics_path,
+		assets_path]
+	
+	for file in os.scandir(plots_path):
+		if file.name.endswith(".png") or file.name.endswith(".pdf"):
+			files_to_move.append(Path(file.path))
+
+	for file in files_to_move:
+		if os.path.exists(file):
+			destination_file = Path(destination_dir, file.name)
+			os.system(f"mv {file} {destination_file}")
+			print(f"Copied {file} to {destination_file}")
+		else:
+			print(f"File {file} does not exist, skipping.")
+			
 if __name__ == "__main__":
-	plot_everything(plot_start_time=10.0, plot_end_time=20.0)
+
+	training_config = TrainingConfig()
+
+	plot_everything(plot_start_time=10.0, plot_end_time=20.0, residual_limit=training_config.residual_threshold)
+	transfer_to_required_directory("2epochs5res", "case1", 1000)
+

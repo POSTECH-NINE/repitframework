@@ -7,7 +7,7 @@ from repitframework.Dataset.fvmn import FVMNDataset
 from repitframework.config import TrainingConfig, OpenfoamConfig
 from repitframework.OpenFOAM.utils import OpenfoamUtils
 
-device = "cuda:0" if torch.cuda.is_available() else "cpu"
+device = "cuda:1" if torch.cuda.is_available() else "cpu"
 optuna.logging.set_verbosity(optuna.logging.INFO)
 torch.manual_seed(42)
 
@@ -55,8 +55,8 @@ if __name__ == "__main__":
         # Suggest hyperparameters
         learning_rate = trial.suggest_float("learning_rate", 1e-8, 1e-1, log=True)
         # optimizer_name = trial.suggest_categorical("optimizer", ["adam", "SGD", "RMSprop", "adamw"])
-        hidden_size = trial.suggest_int("hidden_size", 10, 512)
-        hidden_layers = trial.suggest_int("hidden_layers", 1, 12)
+        hidden_size = trial.suggest_int("hidden_size", 10, 512, log=True)
+        hidden_layers = trial.suggest_int("hidden_layers", 1, 12, log=True)
 
         # Create the model and dataset
         model = FVMNetwork(
@@ -67,8 +67,8 @@ if __name__ == "__main__":
         )
         dataset = FVMNDataset(
             training_config=training_config,
-            start_time=10.62,
-            end_time=10.64,
+            start_time=10.0,
+            end_time=10.02,
             first_training=True
         )
         train_loader, val_loader = get_dataloader(training_config, dataset)
@@ -78,7 +78,7 @@ if __name__ == "__main__":
 
         # Define loss function and optimizer
         criterion = torch.nn.MSELoss()
-        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+        optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
         # if optimizer_name == "adam":
         #     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
         # elif optimizer_name == "SGD":
@@ -162,8 +162,8 @@ if __name__ == "__main__":
     # Create a study object
     study = optuna.create_study(
         direction="minimize",
-        study_name="FVMN_FirstTransferLearning",
-        storage="sqlite:///fvmn_FirstTransferLearning.db",
+        study_name="FVMN_training_case2",
+        storage="sqlite:///fvmn_training_case2.db",
         load_if_exists=True
     )
     # Optimize the objective function
