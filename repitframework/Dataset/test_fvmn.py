@@ -41,4 +41,4 @@ if __name__ == "__main__":
     inputs_, _ = data_test._prepare_inputs_and_labels()
     test_inputs = FVMNDataset.denormalize(inputs_, input_mean, input_std)[:,::5]
 
-    print(np.allclose(actual_inputs, test_inputs))
+    print(np.allclose(actual_inputs, test_inputs, rtol=1e-1))

@@ -3,7 +3,7 @@ from repitframework.config import TrainingConfig
 
 class FVMNetwork(torch.nn.Module):
     def __init__(self, training_config:TrainingConfig, vars_list:list=None,
-                 hidden_layers:int=9, hidden_size:int=512, activation:torch.nn.ReLU=None):
+                 hidden_layers:int=3, hidden_size:int=398, activation:torch.nn.ReLU=None):
         '''
         Args
         ---- 
@@ -70,16 +70,16 @@ class ConvPhiNet(torch.nn.Module):
         self.relu = torch.nn.ReLU()
 
         # Fully connected layers
-        self.fc = torch.nn.Linear(1 * 25 * 25, 4096)
+        self.fc = torch.nn.Linear(1 * 50 * 50, 4096)
         self.fc_bn = torch.nn.BatchNorm1d(4096)  # BatchNorm for fully connected layer
         self.fc2 = torch.nn.Linear(4096, 79600)
 
     def forward(self, x):
         x = self.relu(self.bn1(self.pool(self.conv1(x)))) # [b, 4, 100, 100]
         x = self.relu(self.bn2(self.pool(self.conv2(x)))) # [b, 2, 50, 50]
-        x = self.relu(self.bn3(self.pool(self.conv3(x)))) # [b, 1, 25, 25]
+        x = self.relu(self.bn3(self.conv3(x))) # [b, 1, 50, 50]
 
-        x = x.view(x.size(0), -1)  # Flatten [b, 1*25*25]
+        x = x.view(x.size(0), -1)  # Flatten [b, 1*50*50]
         x = self.relu(self.fc_bn(self.fc(x)))  # Apply BN to FC layer [b, 4096]
         x = self.fc2(x) # [b, 79600]
         return x
@@ -87,6 +87,6 @@ class ConvPhiNet(torch.nn.Module):
 if __name__ == "__main__":
     # Test the network
     model = ConvPhiNet()
-    input_tensor = torch.randn(1, 2, 200, 200)
+    input_tensor = torch.randn(2, 2, 200, 200)
     output = model(input_tensor)
     print(output.shape)

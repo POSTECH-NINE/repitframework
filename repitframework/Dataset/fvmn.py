@@ -4,6 +4,7 @@ import json
 
 from torch.utils.data import Dataset
 import numpy as np
+import torch
 from torch import Tensor, set_default_dtype, float64, tensor
 
 from repitframework.config import TrainingConfig
@@ -12,8 +13,16 @@ from repitframework.Metrics.ResidualNaturalConvection import residual_mass
 set_default_dtype(float64)
 
 class FVMNDataset(Dataset):
-    def __init__(self, training_config:TrainingConfig, first_training:bool, data_path:Path=None, start_time:float=None, 
-                 end_time:float=None, time_step:float=None, vars_list:list=None):
+    def __init__(
+            self, 
+            training_config:TrainingConfig, 
+            first_training:bool, 
+            data_path:Path=None, 
+            start_time:float=None, 
+            end_time:float=None, 
+            time_step:float=None, 
+            vars_list:list=None
+        ):
         '''
         Keep in mind
         ------------
@@ -68,10 +77,10 @@ class FVMNDataset(Dataset):
         self.inputs, self.labels = self._prepare_inputs_and_labels()
 
     def _is_present(self) -> bool:
-        # time_list = np.arange(self.start_time, self.end_time + self.time_step, self.time_step)
         for var in self.vars:
             for time in self.time_list:
-                if not (self.data_path / f"{var}_{round(time, self.training_config.round_to)}.npy").exists():
+                var_path = self.data_path / f"{var}_{round(time, self.training_config.round_to)}.npy"
+                if not var_path.exists():
                     return False
         return True
     
@@ -172,14 +181,15 @@ class FVMNDataset(Dataset):
         window_shape = (3, 3)
         sliding_window = np.lib.stride_tricks.sliding_window_view(input_matrix, window_shape)
         x,y = window_shape[0] // 2, window_shape[1] // 2 
-        correlated_features = np.stack([
+        correlated_features = [
             sliding_window[:,:,x,y],
             sliding_window[:,:,x-1,y],
             sliding_window[:,:,x+1,y],
             sliding_window[:,:,x,y-1],
             sliding_window[:,:,x,y+1]
-        ], axis=-1)
-        return correlated_features.reshape(-1, 5, order="F")
+        ]
+        correlated_features = [data.reshape(-1, order="F") for data in correlated_features]
+        return np.stack(correlated_features, axis=-1)
     
     def _prepare_input(self, time) -> np.ndarray:
         '''
@@ -260,15 +270,15 @@ class FVMNDataset(Dataset):
         mean = np.mean(data, axis=0) if mean is None else mean
         std = np.std(data, axis=0) if std is None else std
         normalized_data = (data - mean)/std
-        return Tensor(normalized_data), mean, std
+        return torch.from_numpy(normalized_data).double(), mean, std
     
     @staticmethod
     def denormalize(data:Tensor, mean_, std_)->Tensor:
         if isinstance(data, Tensor): data = data.cpu().numpy()
         if data.shape[-1] == len(mean_): 
-            return Tensor(data * std_ + mean_)
+            return torch.from_numpy(data * std_ + mean_).double()
         skip_steps = len(mean_) // data.shape[-1]
-        return Tensor(data * std_[::skip_steps] + mean_[::skip_steps])
+        return torch.from_numpy(data * std_[::skip_steps] + mean_[::skip_steps]).double()
     
     def _prepare_inputs_and_labels(self) -> Tuple[Tensor, Tensor]:
         inputs, labels = [], []
@@ -286,13 +296,18 @@ class FVMNDataset(Dataset):
             true_residual_mass = self._calculate_residual(self.end_time)
             # While preparing for new inputs and labels, if this file already exists, it will be overwritten.
             with open(metrics_save_path, "w") as f:
-                json.dump({"input_MEAN": input_MEAN.tolist(), "input_STD": input_STD.tolist(), 
-                        "label_MEAN": label_MEAN.tolist(), "label_STD": label_STD.tolist(),
-                        "true_residual_mass":true_residual_mass}, f, indent=4)
-            return Tensor(normalized_inputs), Tensor(normalized_labels)
+                json.dump(
+                    {
+                        "input_MEAN": input_MEAN.tolist(), 
+                        "input_STD": input_STD.tolist(), 
+                        "label_MEAN": label_MEAN.tolist(), 
+                        "label_STD": label_STD.tolist(),
+                        "true_residual_mass":true_residual_mass
+                    }, f, indent=4
+                    )
+            return normalized_inputs, normalized_labels
         
-        with open(metrics_save_path, "r") as f:
-            metrics = json.load(f)
+        with open(metrics_save_path, "r") as f: metrics = json.load(f)
         input_MEAN = metrics["input_MEAN"]
         input_STD = metrics["input_STD"]
         label_MEAN = metrics["label_MEAN"]
@@ -301,7 +316,7 @@ class FVMNDataset(Dataset):
         normalized_inputs, *_ = self.normalize(inputs, input_MEAN, input_STD)
         normalized_labels, *_ = self.normalize(labels, label_MEAN, label_STD)
 
-        return Tensor(normalized_inputs), Tensor(normalized_labels)
+        return normalized_inputs, normalized_labels
     
     def _generate_intervals(self,):
         time_list = []
@@ -401,8 +416,16 @@ if __name__ == "__main__":
     start_time = 10.0
     end_time = 10.02
     time_step = 0.01
-    data = PhiDataset(training_config,start_time, end_time)
-    inputs , labels = data._prepare_inputs_and_labels()
-    print(inputs.shape, labels.shape, len(data))
+    dataset = FVMNDataset(
+        training_config=training_config,
+        first_training=False,
+        data_path=data_path,
+        start_time=start_time,
+        end_time=end_time,
+        time_step=time_step
+    )
+    inputs, labels = dataset._prepare_inputs_and_labels()
+    print(f"Inputs shape: {inputs.shape}")
+    print(f"Labels shape: {labels.shape}")
 
     

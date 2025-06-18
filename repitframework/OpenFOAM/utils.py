@@ -2,6 +2,7 @@ from pathlib import Path
 import subprocess
 from datetime import datetime
 from typing import List
+import timeit
 
 import Ofpp
 import numpy as np
@@ -85,8 +86,21 @@ class OpenfoamUtils:
         
         return solver_type.strip()
     
+    def _run_mesh_utility(self):
+        self.openfoam_config.logger.debug("Creating the mesh!")
+        command_to_create_mesh = [self.mesh_type, "-case", self.solver_dir]
+        polyMesh_dir = Path.joinpath(self.solver_dir, "constant/polyMesh")
+        if polyMesh_dir.exists():
+            return "Mesh already exists!"
+        return self.run_subprocess(command_to_create_mesh)
+
     @staticmethod
-    def generate_intervals(start_time:int|float, end_time:int|float, time_step:int|float, round_to:int=2) -> list:
+    def generate_intervals(
+                        start_time:int|float, 
+                        end_time:int|float, 
+                        time_step:int|float, 
+                        round_to:int=2
+                    ) -> list:
         '''
         np.arange gave inconsistent results. So, we are using this method to generate the time intervals.
         '''
@@ -106,14 +120,16 @@ class OpenfoamUtils:
         return command_result.stdout
 
     @staticmethod
-    def parse_to_numpy(openfoam_config:OpenfoamConfig,
-                       start_time:float,
-                       end_time:float,
-                       solver_dir:Path=None,
-                       save_path:Path=None,
-                       variables:list=None,
-                       write_interval:float=0.01,
-                       del_dirs:bool=False) -> Path:
+    def parse_to_numpy(
+                    openfoam_config:OpenfoamConfig,
+                    start_time:float,
+                    end_time:float,
+                    solver_dir:Path=None,
+                    save_path:Path=None,
+                    variables:list=None,
+                    write_interval:float=0.01,
+                    del_dirs:bool=False
+                ) -> Path:
         '''
         OpenFOAM stores the data in the form of Dictionary(OpenFOAM type) files. But to train the model
         it will be easier to change to tensors if we can convert them to numpy arrays. This method
@@ -154,7 +170,13 @@ class OpenfoamUtils:
             The path to the assets directory where the data is saved in numpy format.
         '''
         solver_dir = solver_dir if solver_dir else openfoam_config.solver_dir
-        save_path = save_path if save_path else openfoam_config.assets_path
+        if save_path:
+            save_path = Path(save_path)
+            save_path.mkdir(parents=True, exist_ok=True)
+        else:
+            save_path = Path(str(solver_dir).replace("Solvers", "Assets"))
+            save_path.mkdir(parents=True, exist_ok=True)
+        
         variables = variables if variables else openfoam_config.extend_variables()
         write_interval = write_interval if write_interval else openfoam_config.write_interval
         round_to = openfoam_config.round_to
@@ -167,11 +189,11 @@ class OpenfoamUtils:
         for time_dir in time_directories:
             for var in variables:
                 try:
-                    data = Ofpp.parse_internal_field(Path(time_dir, var))
+                    data = Ofpp.parse_internal_field(Path.joinpath(time_dir, var))
                     openfoam_config.logger.debug(f"Data parsed to numpy:{var}_{float(time_dir.name)} --> {data.shape}")
                     np.save(Path(save_path, f"{var}_{float(time_dir.name)}.npy"), data) # We are saving it in float because we want to keep things consistent.
                 except Exception as e:
-                    openfoam_config.logger.exception(f"Error in parsing the data to numpy: {e}")
+                    openfoam_config.logger.exception(f"Check if {time_dir/var} exists else refer to this error: \n{e}")
                     return False
 
         if del_dirs:
@@ -264,11 +286,14 @@ class OpenfoamUtils:
         max_time = max(time_list) if time_list else float(0)
         return int(max_time) if max_time.is_integer() else max_time
 
-    def run_solver(self, start_time:int|float=None,
-                   end_time:int|float=None,
-                   write_interval:int|float=None,
-                   save_to_numpy:bool=True,
-                   del_dirs:bool=False) -> bool:
+    def run_solver(
+        self, 
+        start_time:int|float=None,
+        end_time:int|float=None,
+        write_interval:int|float=None,
+        save_to_numpy:bool=True,
+        del_dirs:bool=False
+    ) -> bool:
         '''
         This method aims at running the CFD solver of your interest. 
 
@@ -319,28 +344,31 @@ class OpenfoamUtils:
             buoyantFoam -case solver_dir
         '''
         write_interval = write_interval if write_interval else self.openfoam_config.write_interval
-        round_to = len(str(write_interval).split(".")[-1])
+        round_to = self.openfoam_config.round_to
         start_time = round(start_time,round_to) if start_time else self.openfoam_config.start_time
         end_time = round(end_time,round_to) if end_time else self.openfoam_config.end_time
-        max_time = OpenfoamUtils.max_time_directory(self.solver_dir, round_to=round_to)
+        # max_time = OpenfoamUtils.max_time_directory(self.solver_dir, round_to=round_to)
         '''
         Because if we already have a time directory greater than the time we want to start
         the simulation, then OpenFOAM doesn't start the simulation. So, to capture this 
         we throw an error. 
         '''
-        if start_time < max_time:
-            raise ValueError(f"Max timestamp is {max_time}, illogical to start simulation from {start_time}")
+        # if start_time < max_time:
+        #     raise ValueError(f"Max timestamp is {max_time}, illogical to start simulation from {start_time}")
         
         # Update the time in the controlDict file
-        self.update_time_foamDictionary(self.openfoam_config, start_time=start_time,
-                                        end_time=end_time, write_interval=write_interval)
-        self.openfoam_config.logger.debug(f"Time updated successfully: start_time={start_time}|end_time={end_time}|write_interval={write_interval}")
+        self.update_time_foamDictionary(
+            self.openfoam_config, start_time=start_time,
+            end_time=end_time, write_interval=write_interval
+        )
+        self.openfoam_config.logger.debug(
+            f"Time updated successfully: \
+            start_time={start_time}|end_time={end_time}|write_interval={write_interval}"
+        )
         self.openfoam_config.logger.debug(f"Solver directory: {self.solver_dir}")
 
         # Create the mesh
-        self.openfoam_config.logger.debug("Creating the mesh!")
-        command_to_create_mesh = [self.mesh_type, "-case", self.solver_dir]
-        mesh_result = self.run_subprocess(command_to_create_mesh)
+        mesh_result = self._run_mesh_utility()
         self.openfoam_config.logger.debug(f"\n Mesh Output: {mesh_result}\n")
 
         # Run the solver
@@ -353,18 +381,27 @@ class OpenfoamUtils:
         self.openfoam_config.logger.debug(f"\n Solver Output: {solver_result}\n")
 
         if save_to_numpy:
-            self.parse_to_numpy(openfoam_config=self.openfoam_config, 
-                                start_time=start_time, 
-                                end_time=end_time,
-                                write_interval=write_interval,
-                                del_dirs=del_dirs)
+            self.parse_to_numpy(
+                openfoam_config=self.openfoam_config, 
+                start_time=start_time, 
+                end_time=end_time,
+                write_interval=write_interval,
+                del_dirs=del_dirs
+            )
 
         return True
 
 if __name__ == "__main__":
     openfoam_config = OpenfoamConfig()
     openfoam_utils = OpenfoamUtils(openfoam_config)
-    # openfoam_utils.run_solver(start_time=10.0, end_time=10.02, write_interval=0.01,save_to_numpy=False, del_dirs=False)
-    openfoam_utils.parse_to_numpy(openfoam_config, start_time=10.0, end_time=20.0, 
-                                  solver_dir="/home/shilaj/repitframework/repitframework/Assets/CFD_full_simulation",
-                                  variables=["phi"])
+    start_time = timeit.default_timer()
+    openfoam_utils.run_solver(start_time=10.0, end_time=20.0, write_interval=0.01,save_to_numpy=False, del_dirs=False)
+    # openfoam_utils.parse_to_numpy(
+    #     openfoam_config, 
+    #     start_time=100.0, 
+    #     end_time=110.0, 
+    #     solver_dir=f"/home/shilaj/repitframework/repitframework/Solvers/natural_convection_case4",
+    #     save_path=f"/home/shilaj/repitframework/repitframework/Assets/natural_convection_case4_backup",
+    # )
+    # end_time = timeit.default_timer()
+    # print(f"Time taken: {end_time-start_time} seconds")

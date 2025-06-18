@@ -1,6 +1,7 @@
 from pathlib import Path
 import subprocess
 import re
+import os
 from copy import deepcopy
 import json
 
@@ -12,7 +13,7 @@ from repitframework.config import OpenfoamConfig, TrainingConfig
 from repitframework.OpenFOAM import OpenfoamUtils
 from repitframework.Models.FVMN.fvmn import ConvPhiNet
 
-
+torch.set_default_dtype(torch.float64)
 '''
 To calculate rho: 
 rho = P*W / R*T
@@ -51,7 +52,7 @@ def calculate_phi(phi_model_path:Path, velocity_data:np.ndarray, metrics_path:Pa
 	phi_label_std = np.array(metrics["phi_label_STD"])
 
 	velocity = (velocity - phi_input_mean) / phi_input_std
-	velocity = torch.Tensor(velocity).to("cuda" if torch.cuda.is_available() else "cpu")
+	velocity = torch.from_numpy(velocity).to("cuda" if torch.cuda.is_available() else "cpu")
 	torch.cuda.empty_cache()
 	phi_model = ConvPhiNet()
 	phi_model.to("cuda" if torch.cuda.is_available() else "cpu")
@@ -82,9 +83,9 @@ def calculate_prgh(pressure_data:np.ndarray, temperature_data:np.ndarray) -> np.
 	gas_constant = 8.31446261815324
 
 	spatial_range = OpenfoamUtils.generate_intervals(
-													0.005, 200*0.005, 
-												  	time_step=0.005, round_to=3
-													)
+						0.005, 200*0.005, 
+						time_step=0.005, round_to=3
+					)
 	spatial_range = np.array(spatial_range).reshape(-1,)
 	height = np.tile(spatial_range, (200,1))
 	
@@ -94,7 +95,10 @@ def calculate_prgh(pressure_data:np.ndarray, temperature_data:np.ndarray) -> np.
 	p_rgh = pressure_data - ((mol_wt * gravity)/(gas_constant * temp_avg))* (pressure_data * height)
 	return p_rgh.reshape(-1, order='F')
 
-def include_all_features_NC(temperature_data:np.ndarray, latestML_time_dir:Path, velocity_data:np.ndarray) -> bool:
+def include_all_features_NC(temperature_data:np.ndarray, 
+							latestML_time_dir:Path, 
+							velocity_data:np.ndarray,
+							adjust_phi:bool=True) -> bool:
 	
 	pressure_path = latestML_time_dir / "p"
 	assert pressure_path, '''You must have "pressure file" -- we are using pressure value from the latest CFD simulation;\n
@@ -102,12 +106,12 @@ def include_all_features_NC(temperature_data:np.ndarray, latestML_time_dir:Path,
 	'''
 	pressure_data = Ofpp.parse_internal_field(pressure_path)
 	rho_data = calculate_rho(pressure_data, temperature_data)
-	p_rgh = calculate_prgh(pressure_data, temperature_data)
-	phi = calculate_phi(
-					phi_model_path=Path("/home/shilaj/repitframework/repitframework/ModelDump/natural_convection/best_phi_model.pth"),
-					velocity_data=velocity_data,
-					metrics_path=Path("/home/shilaj/repitframework/repitframework/ModelDump/natural_convection/phi_denorm_metrics.json")
-					)
+	# p_rgh = calculate_prgh(pressure_data, temperature_data)
+	# phi = calculate_phi(
+	# 				phi_model_path=Path("/home/shilaj/repitframework/repitframework/ModelDump/natural_convection/phi_model_ConvNet_lowestTrainLoss.pth"),
+	# 				velocity_data=velocity_data,
+	# 				metrics_path=Path("/home/shilaj/repitframework/repitframework/ModelDump/natural_convection/phi_denorm_metrics.json")
+	# 				)
 	for file in latestML_time_dir.iterdir():
 		if file == latestML_time_dir / "rho":
 			data_str = "(\n" + parse_numpy(rho_data) + "\n)\n;"
@@ -116,27 +120,33 @@ def include_all_features_NC(temperature_data:np.ndarray, latestML_time_dir:Path,
 				foam_data = re.sub(r'\([\s\S]*?\)\n;', f'{data_str}',foam_data,count=1)
 			with open(file, "w") as f: 
 				f.write(foam_data)
-		elif file == latestML_time_dir / "p_rgh":
-			pass
-			# data_str = "(\n" + parse_numpy(p_rgh) + "\n)\n;"
-			# with open(file, "r") as f: 
-			# 	foam_data = f.read()
-			# 	foam_data = re.sub(r'\([\s\S]*?\)\n;', f'{data_str}',foam_data,count=1)
-			# with open(file, "w") as f: 
-			# 	f.write(foam_data)
-		elif file == latestML_time_dir / "phi":
-			data_str = "(\n" + parse_numpy(phi) + "\n)\n;"
-			with open(file, "r") as f: 
-				foam_data = f.read()
-				foam_data = re.sub(r'\([\s\S]*?\)\n;', f'{data_str}',foam_data,count=1)
-			# with open(file, "w") as f: 
-			# 	f.write(foam_data)
+		# elif file == latestML_time_dir / "p_rgh":
+		# 	data_str = "(\n" + parse_numpy(p_rgh) + "\n)\n;"
+		# 	with open(file, "r") as f: 
+		# 		foam_data = f.read()
+		# 		foam_data = re.sub(r'\([\s\S]*?\)\n;', f'{data_str}',foam_data,count=1)
+		# 	with open(file, "w") as f: 
+		# 		f.write(foam_data)
+		# elif file == latestML_time_dir / "phi":
+		# 	data_str = "(\n" + parse_numpy(phi) + "\n)\n;"
+		# 	with open(file, "r") as f: 
+		# 		foam_data = f.read()
+		# 		foam_data = re.sub(r'\([\s\S]*?\)\n;', f'{data_str}',foam_data,count=1)
+		# 	with open(file, "w") as f: 
+		# 		f.write(foam_data)
+	
+	if adjust_phi:
+		# gt_phi_path = str(latestML_time_dir / "phi").replace("Solvers", "Assets")
+		# gt_phi_path = Path(gt_phi_path.replace("natural_convection", "CFD_full_simulation"))
+		# os.system(f"cp {gt_phi_path} {latestML_time_dir/'phi'}")
+		command_to_adjustPhi = ["adjustPhiML", "-case", latestML_time_dir.parent, "-time", latestML_time_dir.name]
+		return subprocess.run(command_to_adjustPhi, check=True, capture_output=True, text=True).stdout
 
-	return True
+	return "Done!"
 
 def format_number(x):
 	"""Format a number to 12 significant digits without scientific notation."""
-	return f"{x:.17g}"  # Uses 12 significant figures, trims trailing zeros
+	return f"{x:.12g}"  # Uses 12 significant figures, trims trailing zeros
 
 def parse_numpy(data: np.ndarray) -> str:
     """
@@ -339,11 +349,12 @@ def numpyToFoam(openfoam_config:OpenfoamConfig,
 		with open(openfoam_var_path, "w") as file:
 			file.write(foam_data)
 	
-	include_all_features_NC(temperature_data, latestML_time_dir, velocity_data)
+	output_string += include_all_features_NC(temperature_data, latestML_time_dir, velocity_data, adjust_phi=True) #TODO: change the name for use_true_phi to correct_phi
 	return output_string   
 
 	
 if __name__ == "__main__":
 	openfoam_config = OpenfoamConfig()
-	output_string = numpyToFoam(openfoam_config, latestCFD_time=10.0, latestML_time=10.0, is_ground_truth=True)
+	output_string = numpyToFoam(openfoam_config,latestCFD_time=10.0,latestML_time=10.53, is_ground_truth=False,
+							 assets_path=Path("/home/shilaj/shilaj_data/repit_tf/DataSample"))
 	print(output_string)

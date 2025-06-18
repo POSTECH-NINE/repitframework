@@ -28,9 +28,8 @@ def cleanAssets(assets_dir:str)->None:
     solver_dir: Path
         The path to the solver directory.
     """
-    assets_dir = assets_dir.replace("/natural_convection","")
-    os.system(f"rm -r {assets_dir}/natural_convection")
-    os.system(f"cp -r {assets_dir}/natural_convection_backup {assets_dir}/natural_convection")
+    os.system(f"rm -r {assets_dir}")
+    # os.system(f"cp -r {assets_dir}/natural_convection_backup {assets_dir}/natural_convection")
     print("Cleaned the assets directory.")
 
 def cleanMetrics(metrics_dir:str)->None:
@@ -42,11 +41,11 @@ def cleanMetrics(metrics_dir:str)->None:
     metrics_dir: Path
         The path to the metrics directory.
     """
-    files_to_clean = ["prediction_metrics.json", "training_metrics.json","best_model.pth"]
+    files_to_clean = ["prediction_metrics.json", "training_metrics.json","best_model.pth", "prediction_metrics.ndjson", "training_metrics.ndjson"]
     for file in os.scandir(metrics_dir):
         if file.name in files_to_clean:
             os.system(f"rm {file.path}")
-    os.system(f"cp {metrics_dir}/enforced_model.pth {metrics_dir}/best_model.pth")
+    os.system(f"cp {metrics_dir}/init_model.pth {metrics_dir}/best_model.pth")
     print("Cleaned the metrics directory.")
 
 if __name__ == "__main__":
