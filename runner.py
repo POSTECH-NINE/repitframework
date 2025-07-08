@@ -81,7 +81,8 @@ class Trainer:
 		
 		if freeze: 
 			self.model = freeze_layers(self.model, num_layers=2)
-		for epoch in tqdm(range(epochs), desc="Epochs", leave=False):
+
+		for epoch in range(epochs):
 			self.model.train()  # Set the model to training mode
 			train_loss = 0.0
 			for x_batch, y_batch in train_loader:
@@ -557,13 +558,13 @@ def hybrid_training(
 	training_config.logger.info(f"Framework started at {framework_start_time}")
 	while running_time < training_config.prediction_end_time:
 		# Run CFD first:
-		cfd_start_time = timeit.default_timer()
-		openfoam_utils.run_solver(
+		# cfd_start_time = timeit.default_timer()
+		solver_time = openfoam_utils.run_solver(
 			start_time=running_time, 
 			end_time=training_end_time,
 			save_to_numpy=True
 		)
-		cfd_end_time = timeit.default_timer()
+		# cfd_end_time = timeit.default_timer()
 
 		switch_count += 1
 		cfd_timesteps += cfd_runs
@@ -585,11 +586,12 @@ def hybrid_training(
 
 		# Train the model
 		update_start_time = timeit.default_timer()
+		print(f"Training for {trainer.training_config.epochs} epochs...")
 		trainer.train(
 			train_loader, 
 			val_loader, 
 			trainer.training_config.epochs,
-			freeze=not first_training
+			freeze= not first_training
 		)
 		update_end_time = timeit.default_timer()
 
@@ -618,9 +620,10 @@ def hybrid_training(
 		print("\nStarting prediction from: ", 
 			round(training_end_time+trainer.training_config.write_interval,2)
 		)
-		# Store times 
-		if running_time > training_config.training_start_time:
-			cfd_times += cfd_end_time - cfd_start_time
+
+		# To avoid the times for initial training, we only add the times from the first transfer learning onwards.
+		if not first_training:
+			cfd_times += solver_time
 			update_times += update_end_time - update_start_time
 	
 		ml_start_time = timeit.default_timer()
@@ -657,7 +660,7 @@ def hybrid_training(
 		# Just using last three time steps for transfer learning: 
 		training_start_time = round(training_end_time - 3*trainer.training_config.write_interval, 2)
 		first_training = False
-
+		
 	framework_end_time = timeit.default_timer()
 	training_config.logger.info(f"\n\nFramework ended at {framework_end_time}")
 

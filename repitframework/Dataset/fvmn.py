@@ -334,13 +334,13 @@ class FVMNDataset(Dataset):
     
 if __name__ == "__main__":
     training_config = TrainingConfig()
-    data_path = training_config.assets_path
+    data_path = "/home/shilaj/repitframework/repitframework/Assets/natural_convection_case1_backup"
     start_time = 10.0
     end_time = 10.02
     time_step = 0.01
     dataset = FVMNDataset(
         training_config=training_config,
-        first_training=False,
+        first_training=True,
         data_path=data_path,
         start_time=start_time,
         end_time=end_time,

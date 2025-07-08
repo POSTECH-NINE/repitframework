@@ -25,7 +25,7 @@ class FVMNetwork(torch.nn.Module):
         self.hidden_layers = hidden_layers
         self.hidden_size = hidden_size
         self.activation = activation if activation is not None else training_config.activation
-        self.dropout = torch.nn.Dropout(dropout) if dropout is not None else None
+        self.dropout_rate = dropout # Store the rate, not the module directly
         
         # Create networks dynamically based on vars_list
         self.networks = torch.nn.ModuleDict(
@@ -50,45 +50,28 @@ class FVMNetwork(torch.nn.Module):
         """
         input_shape = 15
         output_shape = 1
-        layers = [torch.nn.Linear(input_shape, self.hidden_size), self.activation()]
-        for _ in range(self.hidden_layers):
-            layers.extend([torch.nn.Linear(self.hidden_size, self.hidden_size), self.activation()])
-            layers.append(torch.nn.BatchNorm1d(self.hidden_size))
-            if self.dropout is not None:
-                layers.append(self.dropout)
+        
+        layers = []
+        
+        # Input Layer
+        layers.append(torch.nn.Linear(input_shape, self.hidden_size))
+        layers.append(torch.nn.BatchNorm1d(self.hidden_size)) # BN before Activation
+        layers.append(self.activation()) # Activation after BN
 
+        # Hidden Layers
+        dropout_layers = [self.hidden_layers-1] # Only add dropout to the last hidden layer
+        for i in range(self.hidden_layers):
+            layers.append(torch.nn.Linear(self.hidden_size, self.hidden_size))
+            layers.append(torch.nn.BatchNorm1d(self.hidden_size)) # BN before Activation
+            layers.append(self.activation()) # Activation after BN
+            
+            if self.dropout_rate is not None and i in dropout_layers and self.dropout_rate > 0: # Only add if dropout is enabled
+                layers.append(torch.nn.Dropout(self.dropout_rate)) # Dropout after Activation (and BN)
+
+        # Output Layer
         layers.append(torch.nn.Linear(self.hidden_size, output_shape))
+        
         return torch.nn.Sequential(*layers)
-# class ConvPhiNet(torch.nn.Module):
-#     def __init__(self):
-#         super(ConvPhiNet, self).__init__()
-
-#         self.conv1 = torch.nn.Conv2d(2, 4, kernel_size=3, padding=1)
-#         self.bn1 = torch.nn.BatchNorm2d(4)  
-
-#         self.conv2 = torch.nn.Conv2d(4, 2, kernel_size=3, padding=1)
-#         self.bn2 = torch.nn.BatchNorm2d(2)
-
-#         self.conv3 = torch.nn.Conv2d(2, 1, kernel_size=3, padding=1)
-#         self.bn3 = torch.nn.BatchNorm2d(1)
-
-#         self.pool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
-#         self.relu = torch.nn.ReLU()
-
-#         # Fully connected layers
-#         self.fc = torch.nn.Linear(1 * 50 * 50, 4096)
-#         self.fc_bn = torch.nn.BatchNorm1d(4096)  # BatchNorm for fully connected layer
-#         self.fc2 = torch.nn.Linear(4096, 79600)
-
-#     def forward(self, x):
-#         x = self.relu(self.bn1(self.pool(self.conv1(x)))) # [b, 4, 100, 100]
-#         x = self.relu(self.bn2(self.pool(self.conv2(x)))) # [b, 2, 50, 50]
-#         x = self.relu(self.bn3(self.conv3(x))) # [b, 1, 50, 50]
-
-#         x = x.view(x.size(0), -1)  # Flatten [b, 1*50*50]
-#         x = self.relu(self.fc_bn(self.fc(x)))  # Apply BN to FC layer [b, 4096]
-#         x = self.fc2(x) # [b, 79600]
-#         return x
 
 if __name__ == "__main__":
     # Test the network

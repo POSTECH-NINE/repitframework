@@ -20,7 +20,8 @@ class BaseConfig:
 	metrics_dir:Path = Path(root_dir, "Metrics")
 	model_selector_dir:Path = Path(root_dir, "Models")
 	openfoam_dir:Path = Path(root_dir, "OpenFOAM")
-	solver_dir:Path = Path(root_dir, "Solvers","natural_convection_case2")
+	solver_dir:Path = Path(root_dir, "Solvers","natural_convection_case1")
+	plots_dir:Path = Path(root_dir, "plots")
 
 	assets_dir:Path = Path(root_dir, "Assets")
 	assets_path:Path = Path.joinpath(assets_dir, solver_dir.name)
@@ -154,7 +155,7 @@ class TrainingConfig(BaseConfig):
 		self.batch_size: int = 10000
 		self.epochs: int = 5000
 		self.learning_rate: float = 1e-3
-		self.residual_threshold: float = 10.0 # Adapted from the paper: Section 4.1; page 8
+		self.residual_threshold: float = 5.0 # Adapted from the paper: Section 4.1; page 8
 		self.device: str = "cuda:1" if cuda.is_available() else "cpu"
 		self.optimizer = torch.optim.Adam
 		self.loss = torch.nn.MSELoss()

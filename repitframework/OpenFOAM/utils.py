@@ -373,11 +373,12 @@ class OpenfoamUtils:
 
         # Run the solver
         command_to_run_solver = [self.solver_type, "-case", self.solver_dir]
-        with tqdm(total=1, desc="Running Solver", unit="step") as pbar:
-            self.openfoam_config.logger.debug(f"Solver running from {start_time} to {end_time} started at {datetime.now()}")
-            solver_result = self.run_subprocess(command_to_run_solver)
-            self.openfoam_config.logger.debug(f"Solver running from {start_time} to {end_time} ended at {datetime.now()}")
-            pbar.update(1)
+        print("Running the OpenFOAM solver...")
+        self.openfoam_config.logger.debug(f"Solver running from {start_time} to {end_time} started at {datetime.now()}")
+        solver_start_time = timeit.default_timer()
+        solver_result = self.run_subprocess(command_to_run_solver)
+        solver_end_time = timeit.default_timer()
+        self.openfoam_config.logger.debug(f"Solver running from {start_time} to {end_time} ended at {datetime.now()}")
         self.openfoam_config.logger.debug(f"\n Solver Output: {solver_result}\n")
 
         if save_to_numpy:
@@ -389,7 +390,7 @@ class OpenfoamUtils:
                 del_dirs=del_dirs
             )
 
-        return True
+        return solver_end_time - solver_start_time
 
 if __name__ == "__main__":
     openfoam_config = OpenfoamConfig()

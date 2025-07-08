@@ -30,7 +30,7 @@ def train_val_split(
 	val_dataset = Subset(dataset, val_indices)
 
 	# Create DataLoaders for X (dataset)
-	train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True)
-	val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=False)
+	train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=True, pin_memory=True)
+	val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, drop_last=False, pin_memory=True)
 
 	return train_loader, val_loader
