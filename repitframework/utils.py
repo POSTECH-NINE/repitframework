@@ -1,4 +1,4 @@
-from typing import Tuple, Dict, Union
+from typing import Tuple
 import torch
 import numpy as np
 from pathlib import Path
@@ -6,13 +6,7 @@ from contextlib import ContextDecorator
 from datetime import datetime
 
 from .model_selector import OptimizerSelector
-from .config import TrainingConfig, NaturalConvectionConfig
-from .Dataset import (
-	hard_constraint_bc, 
-	add_feature, 
-	parse_numpy, 
-	match_input_dim, 
-	calculate_residual)
+from .config import TrainingConfig
 
 def load_from_state_dict(
 		model: torch.nn.Module,
@@ -105,18 +99,3 @@ class Timer(ContextDecorator):
     def __exit__(self, *exc):
         self.end = datetime.now()
         self.elapsed = self.end - self.start
-	
-
-
-if __name__ == "__main__":
-	from repitframework.config import TrainingConfig
-	from repitframework.Models import FVMNetwork
-	
-	with Timer() as timer:
-		training_config = TrainingConfig()
-		model = FVMNetwork(vars_list=["U_x", "U_y", "T"],
-						hidden_layers=3, hidden_size=398, 
-						activation=torch.nn.ReLU, dropout=0.2)
-		print(optimize_required_grads_only(model, training_config=training_config,num_freeze=2))
-	print(f"Time taken: {timer.elapsed}")
-	print(f"Timer (seconds): {timer.elapsed.total_seconds()}")

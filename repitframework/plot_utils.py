@@ -840,7 +840,8 @@ def plot_everything(
 		relative_residual=metrics["Relative Residual Mass"],
 		residual_limit=residual_limit,
 		save_name="relative_residual",
-		save_path=plots_dir
+		save_path=plots_dir,
+		bins=1e10
 	)
 
 	# --- Streamlines (latest time) ---
