@@ -1,12 +1,12 @@
 import torch
-from repitframework.config import TrainingConfig
 
 class FVMNetwork(torch.nn.Module):
     def __init__(self, vars_list:list=["U_x", "U_y", "T"],
                  hidden_layers:int=3, 
                  hidden_size:int=398, 
                  activation:torch.nn.ReLU=torch.nn.ReLU, 
-                 dropout=0.2):
+                 dropout=0.2,
+                 input_shape:int=15):
         '''
         Args
         ---- 
@@ -24,6 +24,7 @@ class FVMNetwork(torch.nn.Module):
         self.vars = vars_list
         self.hidden_layers = hidden_layers
         self.hidden_size = hidden_size
+        self.input_shape = input_shape
         self.activation = activation 
         self.dropout_rate = dropout # Store the rate, not the module directly
         
@@ -48,7 +49,7 @@ class FVMNetwork(torch.nn.Module):
         """
         Build a single sub-network architecture.
         """
-        input_shape = 15
+        input_shape = self.input_shape
         output_shape = 1
         
         layers = []
@@ -72,11 +73,3 @@ class FVMNetwork(torch.nn.Module):
         layers.append(torch.nn.Linear(self.hidden_size, output_shape))
         
         return torch.nn.Sequential(*layers)
-
-if __name__ == "__main__":
-    # Test the network
-    model = FVMNetwork(TrainingConfig())
-    
-    dummy_input = torch.randn(10,15)
-    output = model(dummy_input)
-    print(output["T"].shape)

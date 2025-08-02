@@ -1,5 +1,6 @@
 import numpy as np
-from repitframework.config import OpenfoamConfig
+
+from ..config import OpenfoamConfig
 
 foam_config = OpenfoamConfig()
 ny = foam_config.grid_y

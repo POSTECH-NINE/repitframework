@@ -7,8 +7,8 @@ import numpy as np
 import torch
 import Ofpp
 
-from repitframework.config import OpenfoamConfig
-from repitframework.OpenFOAM import OpenfoamUtils
+from ..config import OpenfoamConfig
+from .utils import OpenfoamUtils
 
 torch.set_default_dtype(torch.float64)
 

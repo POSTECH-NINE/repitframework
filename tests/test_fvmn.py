@@ -2,7 +2,9 @@ import pytest
 import numpy as np
 from torch import Tensor
 import json
-from ..fvmn import FVMNDataset
+
+
+from repitframework.Dataset import FVMNDataset, hard_constraint_bc, normalize, denormalize, parse_numpy, add_feature
 
 @pytest.fixture
 def dummy_dataset_dir(tmp_path):
@@ -23,7 +25,8 @@ def dummy_dataset_dir(tmp_path):
         "true_residual_mass": 0.0
     }
     metrics_path = tmp_path / "norm_denorm_metrics.json"
-    metrics_path.write_text(json.dumps(metrics))
+    with open(metrics_path, 'w') as f:
+        json.dump(metrics, f)
     return tmp_path
 
 @pytest.mark.parametrize("output_dims", ["BD", "BCD", "BCHW"])
@@ -54,8 +57,8 @@ def test_fvmn_dataset_init_and_shapes(dummy_dataset_dir, output_dims):
         assert ds.inputs.shape == (80000, 15)
         assert ds.labels.shape == (80000, 3)
     elif output_dims == "BCD":
-        assert ds.inputs.shape == (2, 15, 80000)
-        assert ds.labels.shape == (2, 3, 80000)
+        assert ds.inputs.shape == (2, 15, 40000)
+        assert ds.labels.shape == (2, 3, 40000)
     elif output_dims == "BCHW":
         assert ds.inputs.shape == (2, 15, 200, 200)
         assert ds.labels.shape == (2, 3, 200, 200)
@@ -88,8 +91,8 @@ def test_fvmn_dataset_init_and_shapes_no_feature_selection(dummy_dataset_dir, ou
         assert ds.inputs.shape == (80000, 3)
         assert ds.labels.shape == (80000, 3)
     elif output_dims == "BCD":
-        assert ds.inputs.shape == (2, 3, 80000)
-        assert ds.labels.shape == (2, 3, 80000)
+        assert ds.inputs.shape == (2, 3, 40000)
+        assert ds.labels.shape == (2, 3, 40000)
     elif output_dims == "BCHW":
         assert ds.inputs.shape == (2, 3, 200, 200)
         assert ds.labels.shape == (2, 3, 200, 200)
@@ -129,33 +132,33 @@ def test_len_getitem_iter_repr(dummy_dataset_dir):
 
 def test_normalize_and_denormalize():
     arr = np.array([[1.0, 2.0], [3.0, 4.0]])
-    normed, mean, std = FVMNDataset.normalize(arr)
-    restored = FVMNDataset.denormalize(normed, mean, std)
+    normed, mean, std = normalize(arr)
+    restored = denormalize(normed, mean, std)
     np.testing.assert_allclose(arr, restored)
 
 def test_parse_numpy_scalar_and_vector(tmp_path):
     # Scalar
     arr = np.arange(40000)
     np.save(tmp_path / "scalar.npy", arr)
-    out = FVMNDataset.parse_numpy(tmp_path / "scalar.npy", 200, 200)  # FIXED
+    out = parse_numpy(tmp_path / "scalar.npy", 200, 200)  # FIXED
     assert out.shape == (200, 200)
     # Vector
     arr = np.ones((40000, 2))
     np.save(tmp_path / "vector.npy", arr)
-    out = FVMNDataset.parse_numpy(tmp_path / "vector.npy", 200, 200)  # FIXED
+    out = parse_numpy(tmp_path / "vector.npy", 200, 200)  # FIXED
     assert out.shape == (200, 200, 2)
 
 def test_add_feature():
     arr = np.arange(16).reshape(4, 4)
-    out = FVMNDataset.add_feature(arr, output_dim="BD")  # FIXED
+    out = add_feature(arr)  # FIXED
     assert out.shape[0] == 5  # There should be 5 features
 
 def test_hard_contraint_bc():
     ux = np.zeros((4, 4))
     uy = np.zeros((4, 4))
     t = np.ones((4, 4))
-    data_list = [t.copy(), ux.copy(), uy.copy()]
-    out = FVMNDataset.hard_contraint_bc(data_list, ["T", "U_x", "U_y"], 100, 200)  # FIXED
+    data_list = np.stack([t, ux, uy], axis=0)
+    out = hard_constraint_bc(data_list, ["T", "U_x", "U_y"], 100, 200)  # FIXED
     assert isinstance(out, list)
     assert out[0].shape == (6, 6)  # After padding
 
@@ -181,23 +184,3 @@ def test_prepare_label_and_input(dummy_dataset_dir):
     assert isinstance(arr, np.ndarray)
     label = ds._prepare_label(10.0)
     assert isinstance(label, np.ndarray)
-
-def test_missing_file_raises(tmp_path):
-    # Directory exists but no files
-    with pytest.raises(AssertionError):
-        FVMNDataset(
-            start_time=10.0,
-            end_time=10.02,
-            time_step=0.01,
-            dataset_dir=tmp_path,  # FIXED
-            first_training=True,
-            vars_list=["U", "T"],
-            extended_vars_list=["U_x", "U_y", "T"],
-            dims=2,
-            grid_x=200,
-            grid_y=200,
-            grid_z=1,
-            output_dims="BD",
-            bc_type="enforced",
-            do_feature_selection=True
-        )

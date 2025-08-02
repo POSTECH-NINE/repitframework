@@ -8,7 +8,7 @@ import Ofpp
 import numpy as np
 from tqdm import tqdm
 
-from repitframework.config import OpenfoamConfig
+from ..config import OpenfoamConfig
 
 class OpenfoamUtils:
     def __init__(self, openfoam_config:OpenfoamConfig, 

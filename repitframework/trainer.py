@@ -4,8 +4,6 @@
    - "label_mean", "label_std", "input_mean", "input_std", "true_residual_mass"
 3. To load optimizer and scheduler from checkpoint, override "__init__" method and set `load_optimizer=True` and `load_scheduler=True`.
 4. To change the loss logic, architectural nuances in loss calculation, override `process_one_batch` method.
-5. A method is provided to give the residual mass calculation function, which can be used in the `predict` method.
-6. If feature selection is enabled, verify that the features are always in dimension 1.
 """
 
 from __future__ import annotations
@@ -33,19 +31,19 @@ class BaseHybridTrainer:
 			training_config.model_type,
 			training_config.model_kwargs
 		)
-		self.model.to(self.device)
 		if saved_model_name:
-			self.model, self.optimizer, self.scheduler = self._from_checkpoint(saved_model_name)
+			self.model, self.optimizer, self.scheduler = self.from_checkpoint(saved_model_name)
 			self.training_config.epochs = 0  # Set epochs to 0 if loading from checkpoint
 		else:
 			self.optimizer = self.optimizer_selection()
 			self.scheduler = self.scheduler_selection(self.optimizer)
-		
+			
+		self.model.to(self.device)
 		self.best_validation_loss = float('inf')
 		self.variables = self.training_config.extend_variables()                                      
 
 
-	def _from_checkpoint(self, saved_model_name:str) -> Tuple[torch.nn.Module, torch.optim.Optimizer, torch.optim.lr_scheduler._LRScheduler]:
+	def from_checkpoint(self, saved_model_name:str) -> Tuple[torch.nn.Module, torch.optim.Optimizer, torch.optim.lr_scheduler._LRScheduler]:
 		
 		optim = self.optimizer_selection()
 		scheduler = None

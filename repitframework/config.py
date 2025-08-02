@@ -8,7 +8,6 @@ from typing import List, Literal
 
 import torch.cuda as cuda
 import torch
-import numpy as np
 
 @dataclass
 class BaseConfig:
@@ -202,9 +201,11 @@ class TrainingConfig(BaseConfig):
 	
 	def __post_init__(self):
 		self.logger = self.setup_logger("TrainingLogger",self.log_file)
+		variables = self.extend_variables()
 		new_kwargs = {
-			"vars_list": self.extend_variables(),
-			"activation": self.activation}
+			"vars_list": variables,
+			"activation": self.activation,
+			"input_shape": len(variables)*5 if self.do_feature_selection else len(variables)}
 		self.model_kwargs.update(new_kwargs)
 
 		self.optim_kwargs = {

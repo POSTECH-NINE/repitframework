@@ -84,7 +84,7 @@ def hybrid_train_predict(training_config:NaturalConvectionConfig,
 		# 	model_name="best_model.pth",
 		# 	optimizer=trainer.optimizer
 		# )
-		trainer.model, trainer.optimizer, trainer.scheduler = trainer._from_checkpoint(f"best_model_{training_config.model_type}.pth")
+		trainer.model, trainer.optimizer, trainer.scheduler = trainer.from_checkpoint(f"best_model_{training_config.model_type}.pth")
 
 		if trainer.training_config.epochs == 5000: 
 			save_to_state_dict(
@@ -94,10 +94,7 @@ def hybrid_train_predict(training_config:NaturalConvectionConfig,
 				trainer.optimizer,
 				trainer.scheduler
 			)
-			save_loss(
-				training_config=training_config,
-				save_initial_losses=True
-			)
+			save_loss(training_config=training_config,save_initial_losses=True)
 		
 		print("\nStarting prediction from: ", 
 			round(training_end_time+trainer.training_config.write_interval,2)
@@ -170,9 +167,9 @@ if __name__ == "__main__":
 	with Timer() as total_timer:
 		if_cfd_alone_time = hybrid_train_predict(training_config, 
 							openfoam_config,
-							saved_model_name=f"best_model_{training_config.model_type}.pth",
+							saved_model_name=f"init_model_{training_config.model_type}.pth",
 							transfer_learning_epochs=2)
 	training_config.logger.info("Hybrid training and prediction process completed.")
 	training_config.logger.info(f"Total time taken: {total_timer.elapsed.total_seconds()} seconds")
 	training_config.logger.info(f"Real acceleration: {if_cfd_alone_time/total_timer.elapsed.total_seconds()}")
-	save_loss(training_config=training_config, merge_initial_losses=True)
+	# save_loss(training_config=training_config, merge_initial_losses=False)

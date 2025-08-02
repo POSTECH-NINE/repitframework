@@ -1,3 +1,10 @@
+'''
+BaseHybridPredictor class for hybrid prediction in natural convection problems.
+1. A method is provided to give the residual mass calculation function, which can be used in the `predict` method.
+2. If feature selection is enabled, verify that the features are always in dimension 1.
+3. In the "_normalization_metrics" method, the normalization metrics are loaded from a JSON file; hard-coded name: "norm_denorm_metrics.json".
+'''
+
 
 from typing import Dict, List, Union
 import json
@@ -20,7 +27,7 @@ class BaseHybridPredictor:
 		self.ux_index = self.variables.index("U_x")
 		self.uy_index = self.variables.index("U_y")
 
-		assert self.ux_index, "U_x and U_y must be in the variables list. Otherwise, residue calculation will not work.Hence, no swithching point."
+		assert self.ux_index and self.uy_index, "U_x and U_y must be in the variables list. Otherwise, residue calculation will not work.Hence, no swithching point."
 	
 	def _get_normalization_metrics(self, dataset_dir:Union[str, Path]) -> Dict[str,np.ndarray]:
 		"While creatting the dataset instance, the normalization metrics are saved in a JSON file (if do_normalize is TRUE)."
@@ -33,7 +40,7 @@ class BaseHybridPredictor:
 	def get_ground_truth_data(
 			self, 
 			time_step:int|float
-		) -> List[np.ndarray]:
+		) -> np.ndarray:
 		'''
 		For the first prediction, we need ground truth data to give input to the model.
 		Args
@@ -122,7 +129,7 @@ class BaseHybridPredictor:
 
 		Args
 		----
-		data: torch.Tensor:
+		data: np.ndarray:
 			The data for which the boundary conditions are to be applied.
 		time_step: int|float:
 			The time step for which the boundary conditions are to be applied.
@@ -130,12 +137,19 @@ class BaseHybridPredictor:
 			The path where the data is stored.
 		'''
 		if self.training_config.do_feature_selection:
-			pred_data = np.concatenate([add_feature(data) for data in hard_constraint_bc(
-				pred_data,
-				extended_vars_list=self.variables,
-				left_wall_temperature=self.training_config.left_wall_temperature,
-				right_wall_temperature=self.training_config.right_wall_temperature
-				)], axis=0)
+			# We are applying the boundary conditions because of feature selection, 
+			# if feature selection is not enabled, we don't need to apply boundary conditions also.
+			pred_data_bc:List[np.ndarray] = hard_constraint_bc(
+							pred_data,
+							self.variables,
+							self.training_config.left_wall_temperature,
+							self.training_config.right_wall_temperature
+						)
+			pred_data_bc = [add_feature(data) for data in pred_data_bc]  # Add correlated features
+			pred_data = np.concatenate(pred_data_bc, axis=0)
+		else:
+			pred_data = np.stack(pred_data, axis=0)  # Shape: [num_variables, grid_y, grid_x]
+
 		temp = match_input_dim(
 			output_dims=self.training_config.output_dims,
 			inputs= [pred_data]
@@ -162,21 +176,6 @@ class BaseHybridPredictor:
 		   We leverage this to get the index of U_x, U_y, T.
 		2. If it is not the first prediction, we are setting U_x and T values in that iteration as previous values 
 		   and as the process progresses, we update the previous values with the predicted values.
-		3. We save the predicted values here. In the prediction loop, we get the output for time(running_time) + dt.
-		   So, it makes sense that we can update the running time, and while preparing input for the next prediction, 
-		   we can add boundary values to the prev. predicted values and that would represent the predicted values for 
-		   currently running_time in prediction loop.
-
-		Reasoning
-		---------
-		But why did we assign the present/previous ux_matrix, uy_matrix, t_matrix in this function? 
-		Because, we would have input and output data both in the predict method. Wouldn't it make sense to assign the values there?
-
-		Sadly NO.
-		Because, the input for the network is feature extracted. Example shape: [40000,15]
-		And the output from the network is boundary excluded data. Example shape: [39204,3]
-		Hence, we must do the post-processing before calculating the residue. So, for me, 
-		it made a lot of sense to assign the values here. If you have a better idea, please let me know.
 		'''
 		if prediction_input is None:
 			# If it is the first prediction, we need to get the ground truth data.
@@ -215,7 +214,7 @@ class BaseHybridPredictor:
 		network_input:torch.Tensor = torch.from_numpy(network_input).to(self.training_config.device)
 		predicted_output:torch.Tensor = model(network_input)
 
-		# Denormalize the output
+		# If multiple outputs are returned, concatenate them
 		if isinstance(predicted_output, Dict):
 			predicted_output = torch.cat([output.cpu() for output in predicted_output.values()], dim=1)
 

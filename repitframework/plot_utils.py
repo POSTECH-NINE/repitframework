@@ -10,7 +10,7 @@ import imageio
 from typing import Dict, List
 from datetime import datetime
 
-from repitframework.config import TrainingConfig, NaturalConvectionConfig
+from config import TrainingConfig, NaturalConvectionConfig
 
 sns.set_theme(
 	context="talk",                # Large, readable fonts for presentations/papers
@@ -845,13 +845,13 @@ def plot_everything(
 	)
 
 	# --- Streamlines (latest time) ---
-	plot_streamlines_comparison(
-		data_path_1=prediction_dir,
-		data_path_2=None,
-		ground_truth_path=ground_truth_dir,
-		t=plot_end_time,
-		save_path=plots_dir
-	)
+	# plot_streamlines_comparison(
+	# 	data_path_1=prediction_dir,
+	# 	data_path_2=None,
+	# 	ground_truth_path=ground_truth_dir,
+	# 	t=plot_end_time,
+	# 	save_path=plots_dir
+	# )
 
 	# --- Spectral analysis (latest time) ---
 	plot_spectral_analysis(

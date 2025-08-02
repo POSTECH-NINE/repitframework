@@ -2,11 +2,12 @@ from pathlib import Path
 from typing import Tuple, Union, List, Literal, Optional
 import shutil
 import json
+
+
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torch import Tensor
 
-from ..Metrics.ResidualNaturalConvection import residual_mass
 from .utils import (
 	normalize, 
 	parse_numpy, 

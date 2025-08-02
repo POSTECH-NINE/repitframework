@@ -1,6 +1,8 @@
 import numpy as np
 from typing import List, Union, Optional, Tuple
 from pathlib import Path
+
+
 from ..Metrics.ResidualNaturalConvection import residual_mass
 
 def hard_constraint_bc(
@@ -78,12 +80,12 @@ def add_feature(input_matrix:np.ndarray) -> np.ndarray:
     Args
     ----
     input_matrix: np.ndarray
-        The input data matrix. Example Shape: [200,200]
+        The input data matrix. Example Shape: [202,202]
 
     Returns
     -------
     correlated_features: np.ndarray
-        The correlated features. Example Shape: [39204, 5]
+        The correlated features. Example Shape: [5, 200, 200]
 
     '''
     window_shape = (3, 3)

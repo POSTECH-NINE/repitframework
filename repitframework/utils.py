@@ -74,11 +74,9 @@ def optimize_required_grads_only(model: torch.nn.Module,
 	if hasattr(model, "networks") and isinstance(model.networks,torch.nn.ModuleDict):
 		for network in model.networks.values():
 			freeze_layers(network, training_config.layers_to_freeze)
-			params = (p for net in model.networks.values() for p in net.parameters() if p.requires_grad)
 	else:
 		freeze_layers(model, training_config.layers_to_freeze)
-		params = (p for p in model.parameters() if p.requires_grad)
-
+	params = filter(lambda p: p.requires_grad, model.parameters())
 	optimizer = OptimizerSelector(
 		training_config.optimizer_type,
 		params,
