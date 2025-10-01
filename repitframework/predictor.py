@@ -1,9 +1,20 @@
-'''
-BaseHybridPredictor class for hybrid prediction in natural convection problems.
-1. A method is provided to give the residual mass calculation function, which can be used in the `predict` method.
-2. If feature selection is enabled, verify that the features are always in dimension 1.
-3. In the "_normalization_metrics" method, the normalization metrics are loaded from a JSON file; hard-coded name: "norm_denorm_metrics.json".
-'''
+# predictor.py
+
+"""
+Defines the BaseHybridPredictor for managing hybrid ML-CFD predictions in
+natural convection simulations.
+
+Key Features:
+- Manages an autoregressive prediction loop that runs until a specified
+  residual mass threshold is exceeded.
+- Handles data normalization, boundary condition enforcement, and feature engineering.
+- Provides methods for loading initial data, saving predictions, and logging metrics.
+
+Important:
+-  A method is provided to give the residual mass calculation function, which can be used in the `predict` method.
+-  If feature selection is enabled, verify that the features are always in dimension 1.
+-  In the "_normalization_metrics" method, the normalization metrics are loaded from a JSON file; hard-coded name: "norm_denorm_metrics.json".
+"""
 
 
 from typing import Dict, List, Union
@@ -17,208 +28,219 @@ import torch
 from .config import NaturalConvectionConfig
 from .Dataset import normalize, denormalize, parse_numpy, add_feature, hard_constraint_bc, match_input_dim
 from .Metrics.ResidualNaturalConvection import residual_mass
+from .OpenFOAM.numpyToFoam import numpyToFoamDirect
 
+
+
+# --- Constants ---
+_METRICS_FILENAME = "norm_denorm_metrics.json"
 
 
 class BaseHybridPredictor:
-	def __init__(self, training_config:NaturalConvectionConfig):
-		self.training_config = training_config
-		self.variables = self.training_config.extend_variables()
-		self.ux_index = self.variables.index("U_x")
-		self.uy_index = self.variables.index("U_y")
+	"""
+	Manages a dimension-agnostic hybrid prediction workflow, combining an ML model with physics calculations.
+	"""
 
-		assert self.ux_index and self.uy_index, "U_x and U_y must be in the variables list. Otherwise, residue calculation will not work.Hence, no swithching point."
-	
-	def _get_normalization_metrics(self, dataset_dir:Union[str, Path]) -> Dict[str,np.ndarray]:
-		"While creatting the dataset instance, the normalization metrics are saved in a JSON file (if do_normalize is TRUE)."
-		metrics_path = Path(dataset_dir) / "norm_denorm_metrics.json"
+	def __init__(self, training_config: NaturalConvectionConfig):
+		self.config = training_config
+		self.variables = self.config.extend_variables()
+		self.device = self.config.device
+		self.relative_residual_mass = 0.0
+		self.true_residual_mass = 1.0
+
+		# Dynamically find indices for all velocity components (U_x, U_y, U_z...)
+		self.velocity_indices = [
+			i for i, var in enumerate(self.variables) if var.startswith("U_")
+		]
+		if not self.velocity_indices:
+			raise ValueError(
+				"No velocity variables (e.g., 'U_x') found in the variables list. "
+				"Cannot calculate residual mass."
+			)
+
+	def _get_velocity_field(self, state_array: np.ndarray) -> np.ndarray:
+		"""
+		Extracts and assembles the velocity field from a full state array.
+
+		Args:
+			state_array: The full data array with shape [num_variables, *grid_shape].
+
+		Returns:
+			The velocity field with shape [*grid_shape, num_components].
+		"""
+		# Select all velocity component slices using the pre-found indices
+		velocity_components = state_array[self.velocity_indices]
+		# Stack components along a new, last axis
+		return np.stack(velocity_components, axis=-1)
+
+	def _get_normalization_metrics(self) -> Dict[str, np.ndarray]:
+		"""Loads normalization metrics from the assets directory."""
+		metrics_path = self.config.assets_dir / _METRICS_FILENAME
 		with open(metrics_path, "r") as f:
 			metrics = json.load(f)
-		
 		return metrics
-	
-	def get_ground_truth_data(
-			self, 
-			time_step:int|float
-		) -> np.ndarray:
-		'''
-		For the first prediction, we need ground truth data to give input to the model.
-		Args
-		---- 
-		time_step: float: 
-			The time step for which we are predicting. e.g., 5.03
 
-		Returns
-		-------
-		>>> Shape: [num_variables, grid_y, grid_x]
+	def _get_initial_ground_truth(self, time_step: float) -> np.ndarray:
+		"""
+		Loads and assembles the complete ground truth state for a given time step.
+		"""
+		initial_state = []
+		for var_name in self.variables:
+			base_var = var_name.split("_")[0]
+			data = self.get_ground_truth_data(time_step, var=base_var)
 
-		Functionality
-		-------------
-		1. Get data for the time step from ground truth data.
-		2. Parse the numpy data for the variables.
-		3. Separate the dimensions of the data if present.
-		'''
-		data_path = self.training_config.assets_dir
-		variables = self.training_config.get_variables()
-		full_data_path = [data_path / f"{var}_{time_step}.npy" for var in variables]
-		numpy_data = [
-			parse_numpy(
-				dataset_file=path,
-				grid_x=self.training_config.grid_x,
-				grid_y=self.training_config.grid_y,
-				grid_z=self.training_config.grid_z,
-				data_dim=self.training_config.data_dim
-			)
-			for path in full_data_path
-		]
-		temp = list()
-		for data in numpy_data:
-			if len(data.shape) > 2:
-				for i in range(self.training_config.data_dim):
-					temp.append(data[:,:, i])
-			else:
-				temp.append(data)
-		return np.stack(temp, axis=0)  # Shape: [num_variables, grid_y, grid_x]
-	
-	def save_prediction_results(self,
-								pred_data:np.ndarray,
-								time_step:Union[int,float]) -> np.ndarray:
-		
-		'''
-		Save the predicted data to the assets directory.
-		Args
-		----
-		pred_data: np.ndarray:
-			The predicted data from the model.
-		time_step: Union[int, float]:
-			The time step for which the data is predicted.
+			if data.ndim > len(self.config.grid_shape):  # Vector field
+				component = var_name.split("_")[-1]
+				component_idx = ["x", "y", "z"].index(component)
+				initial_state.append(data[..., component_idx])
+			else:  # Scalar field
+				initial_state.append(data)
 
-		Returns
-		-------
-		The predicted data stacking the variables in the order of self.variables in the dimension 0.
-		>>> [num_variables, grid_y, grid_x]
-		'''
-		# Regardless of the shape, throughout the framework, we always put features in dimension 1.
-		pred_data = [pred_data[:, i].reshape(self.training_config.grid_y, self.training_config.grid_x) for i in range(pred_data.shape[1])]
+		return np.stack(initial_state, axis=0)
 
-		for notation, var in self.training_config.data_vars.items():
-			if notation == "vectors":
-				for i, vector in enumerate(var):
-					var_Xindex = self.variables.index(vector + "_x")
-					var_Yindex = self.variables.index(vector + "_y")
-					Xdata:np.ndarray = pred_data[var_Xindex]
-					Ydata:np.ndarray = pred_data[var_Yindex]
-					if vector == "U":
-						self.ux_matrix = Xdata
-						self.uy_matrix = Ydata
-					vector_data = np.concatenate([Xdata.reshape(-1,1), Ydata.reshape(-1,1)], axis=1)
-					np.save(self.training_config.assets_dir / f"{vector}_{time_step}_predicted.npy", vector_data)
-			elif notation == "scalars":
-				for i, v in enumerate(var):
-					var_index = self.variables.index(v)
-					np.save(self.training_config.assets_dir / f"{v}_{time_step}_predicted.npy", pred_data[var_index].reshape(-1))
-			else:
-				raise ValueError(f"Invalid notation {notation} in data_vars. Must be either 'vectors' or 'scalars'.")
-
-		return np.stack(pred_data, axis=0)  # Shape: [num_variables, grid_y, grid_x]
-	
-
-	def apply_boundary_conditions(self, pred_data:np.ndarray) -> np.ndarray:
-		'''
-		Apply the boundary conditions to the data.
-
-		Args
-		----
-		data: np.ndarray:
-			The data for which the boundary conditions are to be applied.
-		time_step: int|float:
-			The time step for which the boundary conditions are to be applied.
-		data_path: Path:
-			The path where the data is stored.
-		'''
-		if self.training_config.do_feature_selection:
-			# We are applying the boundary conditions because of feature selection, 
-			# if feature selection is not enabled, we don't need to apply boundary conditions also.
-			pred_data_bc:List[np.ndarray] = hard_constraint_bc(
-							pred_data,
-							self.variables,
-							self.training_config.left_wall_temperature,
-							self.training_config.right_wall_temperature
-						)
-			pred_data_bc = [add_feature(data) for data in pred_data_bc]  # Add correlated features
-			pred_data = np.concatenate(pred_data_bc, axis=0)
-		else:
-			pred_data = np.stack(pred_data, axis=0)  # Shape: [num_variables, grid_y, grid_x]
-
-		temp = match_input_dim(
-			output_dims=self.training_config.output_dims,
-			inputs= [pred_data]
+	def get_ground_truth_data(self, time_step: float, var: str = "U") -> np.ndarray:
+		"""
+		Fetches and parses a single ground truth variable from a .npy file.
+		"""
+		full_data_path = self.config.assets_dir / f"{var}_{time_step}.npy"
+		return parse_numpy(
+			dataset_file=full_data_path,
+			grid_x=self.config.grid_x,
+			grid_y=self.config.grid_y,
+			grid_z=self.config.grid_z,
 		)
-		return temp
-	
-	def prepare_input_for_prediction(self, time_step:int|float,  
-									 prediction_input:np.ndarray=None) -> np.ndarray:
-		'''
-		If feature selection is enabled, boundary values need to be enforced.
 
-		Args
-		----
-		time_step: int|float:
-			If we are predicting for t then time_step = t-dt.
-		data: torch.Tensor: 
-			The output from the model after denormalizing and adding with the input [batch_size, num_features]
-		data_path: Path: 
-			if we predict for time step 5.03 then we need the original data for the time step 5.03 to get the boundary data.
+	def _save_and_process_predictions(
+		self, pred_data_flat: np.ndarray, time_step: float
+	) -> np.ndarray:
+		"""
+		Saves predicted data to files and processes it for the next step.
+		"""
+		pred_data_gridded = [
+			pred_data_flat[:, i].reshape(self.config.grid_shape).squeeze()
+			for i in range(pred_data_flat.shape[1])
+		]
 
-		Functionality
-		-------------
-		1. Because, we are using the same training_config.get_variables() to get the variables.
-		   We leverage this to get the index of U_x, U_y, T.
-		2. If it is not the first prediction, we are setting U_x and T values in that iteration as previous values 
-		   and as the process progresses, we update the previous values with the predicted values.
-		'''
-		if prediction_input is None:
-			# If it is the first prediction, we need to get the ground truth data.
-			ground_truth = self.get_ground_truth_data(time_step)
-			self.relative_residual_mass = residual_mass(ground_truth[self.ux_index], ground_truth[self.uy_index])/self.true_residual_mass
+		data_dict = {}
 
-			return self.apply_boundary_conditions(ground_truth)
+		for notation, var_list in self.config.data_vars.items():
+			if notation == "vectors":
+				for vec_name in var_list:
+					# Find all components for the current vector (e.g., "U_x", "U_y")
+					component_indices = {
+						"x": self.variables.index(f"{vec_name}_x"),
+						"y": self.variables.index(f"{vec_name}_y")
+					}
+					if self.config.data_dim == 3:
+						component_indices["z"] = self.variables.index(f"{vec_name}_z")
+					
+					# Prepare components for saving
+					components_to_save = [
+						pred_data_gridded[idx].flatten() for idx in component_indices.values()
+					]
+
+					vector_data = np.stack(components_to_save, axis=1)
+					np.save(
+						self.config.assets_dir / f"{vec_name}_{time_step}_predicted.npy",
+						vector_data,
+					)
+					data_dict[vec_name] = vector_data
+			elif notation == "scalars":
+				for scalar_name in var_list:
+					s_idx = self.variables.index(scalar_name)
+					np.save(
+						self.config.assets_dir / f"{scalar_name}_{time_step}_predicted.npy",
+						pred_data_gridded[s_idx].flatten(),
+					)
+					data_dict[scalar_name] = pred_data_gridded[s_idx].flatten()
+
+		# # Call numpytofoam here
+		# latestCFD_time = round(time_step - self.config.write_interval, self.config.round_to)
+		# latestCFD_time = int(latestCFD_time) if latestCFD_time.is_integer() else latestCFD_time
+		# numpyToFoamDirect(
+		# 	training_config=self.config,
+		# 	latestML_time=time_step,
+		# 	data_dict=data_dict,
+		# 	latestCFD_time=latestCFD_time,
+		# 	solver_dir=self.config.solver_dir
+		# )
+		return np.stack(pred_data_gridded, axis=0) # Shape: [num_variables, *grid_shape]
+
+	def _preprocess_for_model(self, data: np.ndarray) -> np.ndarray:
+		"""
+		Prepares data for model input by applying BCs, adding features,
+		and reshaping to match the model's expected input format.
+		"""
+		processed_data = data
+		if self.config.do_feature_selection:
+			data_bc = hard_constraint_bc(
+				data,
+				self.variables,
+				self.config.left_wall_temperature,
+				self.config.right_wall_temperature,
+			)
+			data_features = [add_feature(d) for d in data_bc]
+			processed_data = np.concatenate(data_features, axis=0)
+
+		return match_input_dim(
+			output_dims=self.config.output_dims, inputs=[processed_data]
+		)
+
+	def _advance_simulation_step(
+		self, time_step: float, pred_output: np.ndarray = None
+	) -> np.ndarray:
+		"""
+		Processes the latest prediction and prepares the input for the next step.
+		"""
+		if pred_output is None:  # First prediction step
+			state_data = self._get_initial_ground_truth(time_step)
+		else:  # Subsequent prediction steps
+			state_data = self._save_and_process_predictions(pred_output, time_step)
+
+		# Calculate residual from the current state's unified velocity field
+		velocity_field = self._get_velocity_field(state_data)
+		current_residual = residual_mass(velocity_field)
+		self.relative_residual_mass = current_residual / self.true_residual_mass
+
+		# Log metrics for completed steps
+		if pred_output is not None:
+			self.config.logger.debug(f"Relative Residual Mass: {self.relative_residual_mass:.4f}")
+			self.config.log_metrics("Running Time", time_step, "prediction")
+			self.config.log_metrics("Relative Residual Mass", self.relative_residual_mass, "prediction")
+
+		return self._preprocess_for_model(state_data)
+
+	def _run_prediction_step(
+		self,
+		running_time: float,
+		prev_step_output: np.ndarray,
+		metrics: dict,
+		model: torch.nn.Module,
+	) -> np.ndarray:
+		"""
+		Executes one full autoregressive step of the prediction loop.
+		"""
+		model_input = self._advance_simulation_step(running_time, prev_step_output)
 		
-		pred_data = self.save_prediction_results(prediction_input, time_step)
-
-		# Save residual mass for the time step
-		predicted_residual_mass = residual_mass(self.ux_matrix, self.uy_matrix, order="C")
-		self.relative_residual_mass = predicted_residual_mass / self.true_residual_mass
-
-		self.training_config.logger.debug(f"Relative Residual Mass: {self.relative_residual_mass:.4f}")
-		self.training_config.log_metrics(key="Running Time", value=time_step, metrics_type="prediction")
-		self.training_config.log_metrics(key="Relative Residual Mass", value=self.relative_residual_mass, metrics_type="prediction")
-
-		return self.apply_boundary_conditions(pred_data)
-	
-	def prediction_loop(self, running_time:float,
-					 prediction_input:np.ndarray,
-					 metrics:dict,
-					 model:torch.nn.Module) -> np.ndarray:
-		
-		prediction_input:np.ndarray = self.prepare_input_for_prediction(
-					time_step=running_time,
-					prediction_input=prediction_input
-				)
-		
-		if self.training_config.do_normalize:
-			network_input, *_ = normalize(prediction_input,mean=np.array(metrics["input_mean"]),std=np.array(metrics["input_std"]))
+		if self.config.do_normalize:
+			norm_input, *_ = normalize(
+				model_input,
+				mean=np.array(metrics["input_mean"]),
+				std=np.array(metrics["input_std"])
+			)
 		else:
-			network_input = prediction_input
-		# Convert to torch tensor and move to device
-		network_input:torch.Tensor = torch.from_numpy(network_input).to(self.training_config.device)
-		predicted_output:torch.Tensor = model(network_input)
+			norm_input = model_input
 
+		network_input = torch.from_numpy(norm_input).to(self.device)
+		predicted_output = model(network_input)
+		
 		# If multiple outputs are returned, concatenate them
 		if isinstance(predicted_output, Dict):
 			predicted_output = torch.cat([output.cpu() for output in predicted_output.values()], dim=1)
+		else:
+			predicted_output = predicted_output.cpu()
 
-		if self.training_config.do_normalize:
+		if self.config.do_normalize:
 			network_output = denormalize(
 				predicted_output.numpy(),
 				np.array(metrics["label_mean"]),
@@ -227,60 +249,41 @@ class BaseHybridPredictor:
 		else:
 			network_output = predicted_output.numpy()
 
-		if self.training_config.do_feature_selection:
-			# Always on dimension 1, we have the features.
-			auto_regressed_input = prediction_input[:,::5] + network_output
+		if self.config.do_feature_selection:
+			skip_step = (2*self.config.data_dim)+1
+			autoregressed_input = model_input[:, ::skip_step] + network_output
 		else:
-			auto_regressed_input = prediction_input + network_output
+			autoregressed_input = model_input + network_output
 
-		return auto_regressed_input
+		return autoregressed_input
 
-	def predict(self,prediction_start_time:float, model:torch.nn.Module)-> float:
-
+	def predict(self, prediction_start_time: float, model: torch.nn.Module) -> float:
+		"""
+		Runs the main prediction loop until a condition is met.
+		"""
 		model.eval()
-		# Initialize prediction start parameters:
 		running_time = prediction_start_time
-		prediction_input = None
-		self.relative_residual_mass = self.training_config.residual_threshold # This will be updated during the prediction loop.
-
-		metrics = self._get_normalization_metrics(self.training_config.assets_dir)
-		self.true_residual_mass = metrics["true_residual_mass"]
+		prediction_result = None
+		metrics = self._get_normalization_metrics()
+		self.true_residual_mass = metrics.get("true_residual_mass", 1.0)
+		self.relative_residual_mass = 0.0 # Initialize to enter loop
 
 		with torch.inference_mode():
-			while (self.relative_residual_mass <= self.training_config.residual_threshold) and (running_time <= self.training_config.prediction_end_time):
-				prediction_input = self.prediction_loop(
+			while (
+				self.relative_residual_mass <= self.config.residual_threshold
+				and running_time <= self.config.prediction_end_time
+			):
+				prediction_result = self._run_prediction_step(
 					running_time=running_time,
-					prediction_input=prediction_input,
+					prev_step_output=prediction_result,
 					metrics=metrics,
-					model=model
+					model=model,
 				)
-				# Update the running time
-				running_time = round(running_time + self.training_config.write_interval, self.training_config.round_to)
+				running_time = round(
+					running_time + self.config.write_interval, self.config.round_to
+				)
 
-			# Because prepare_input_for_prediction function calculates the residual values.
-			# Hence, even if the residue value exceeds the threshold, the running time will be updated.
-			# So, we need to step down the running time by the write interval outside the loop.
-		return round(running_time - self.training_config.write_interval, self.training_config.round_to)
-	
-	def predict_batched(self, model: torch.nn.Module, inputs):
-		model.eval()
-		# If model returns a dict, create per-key storage
-		all_outputs = None
-		with torch.no_grad():
-			for i in range(0, inputs.shape[0], self.training_config.batch_size):
-				batch = inputs[i:i+self.training_config.batch_size].to(self.training_config.device)
-				outputs = model(batch)
-				if isinstance(outputs, dict):
-					if all_outputs is None:
-						all_outputs = {k: [] for k in outputs}
-					for k, v in outputs.items():
-						all_outputs[k].append(v.cpu())
-				else:
-					if all_outputs is None:
-						all_outputs = []
-					all_outputs.append(outputs.cpu())
-		# Concatenate appropriately
-		if isinstance(all_outputs, dict):
-			return {k: torch.cat(v, dim=0) for k, v in all_outputs.items()}
-		else:
-			return torch.cat(all_outputs)
+		final_time = round(
+			running_time - self.config.write_interval, self.config.round_to
+		)
+		return final_time

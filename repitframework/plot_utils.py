@@ -10,7 +10,7 @@ import imageio
 from typing import Dict, List
 from datetime import datetime
 
-from config import TrainingConfig, NaturalConvectionConfig
+from repitframework.config import TrainingConfig, NaturalConvectionConfig
 
 sns.set_theme(
 	context="talk",                # Large, readable fonts for presentations/papers
@@ -304,7 +304,7 @@ def plot_MAE(
 
 	plt.figure(figsize=(8, 5))
 	plt.plot(pred_time_list, meanAE_list, label="MeanAE Over Time", color="blue", linewidth=2)
-	plt.scatter(temp_dict["max_meanAE_timestep"], temp_dict["max_meanAE"], color="red", label=f"MeanAE: {temp_dict['max_meanAE']:.3f} at t={temp_dict["max_meanAE_timestep"]:.2f}")
+	plt.scatter(temp_dict["max_meanAE_timestep"], temp_dict["max_meanAE"], color="red", label=f"MeanAE: {temp_dict['max_meanAE']:.3f} at t={temp_dict['max_meanAE_timestep']:.2f}")
 	plt.xlim(x_min, x_max)
 	plt.ylim(y_min_meanAE, y_max_meanAE)
 	plt.annotate(f'''relErr: {temp_dict["max_meanAE"]*100/temp_dict["max_meanAE_gt"]:.3f}%''',
@@ -327,25 +327,41 @@ def plot_L2_error(
 	save_path: Path = None,
 	include_sim_results: bool = True
 ):
-	vars_dict = {
-		"velocity-x": "U",
-		"temperature": "T",
-		"U_x": "U",
-		"T": "T"
-	}
+	# vars_dict = {
+	# 	"velocity-z": "U",
+	# 	"temperature": "T",
+	# 	"U_z": "U",
+	# 	"T": "T"
+	# }
+	if "-x" in var_name:
+		index = 0
+	elif "-y" in var_name:
+		index = 1
+	elif "-z" in var_name:
+		index = 2
+	else:
+		...
+
+	if "velocity" in var_name or "U_" in var_name:
+		access_variable = "U"
+	elif var_name == "temperature" or var_name == "T":
+		access_variable = "T"
+	else:
+		raise ValueError(f"Variable name {var_name} not recognized for L2 error plotting.")
+		
 	l2_errors = []
 
 	if include_sim_results:
 		pred_time_list = extend_timesteps_to_full(pred_time_list, time_step=0.01)
 	for timestamp in pred_time_list:
-		gt = np.load(ground_truth_dir / f"{vars_dict[var_name]}_{timestamp}.npy")
-		predicted_output_path = prediction_dir / f"{vars_dict[var_name]}_{timestamp}_predicted.npy"
+		gt = np.load(ground_truth_dir / f"{access_variable}_{timestamp}.npy")
+		predicted_output_path = prediction_dir / f"{access_variable}_{timestamp}_predicted.npy"
 		if not predicted_output_path.exists():
-			predicted_output_path = prediction_dir / f"{vars_dict[var_name]}_{timestamp}.npy"
+			predicted_output_path = prediction_dir / f"{access_variable}_{timestamp}.npy"
 		pred = np.load(predicted_output_path)
-		if var_name in ["velocity-x", "U_x"]:
-			gt = gt[:, 0]
-			pred = pred[:, 0]
+		if "velocity" in var_name or "U_" in var_name:
+			gt = gt[:, index]
+			pred = pred[:, index]
 		elif var_name == "temperature":
 			gt = gt.flatten()
 			pred = pred.flatten()
@@ -464,7 +480,7 @@ def save_loss(training_config:TrainingConfig,
 	plt.title("Training and Validation Loss")
 	plt.legend()
 	plt.tight_layout()
-	plt.savefig(plots_dir / f"training_loss_{datetime.now().strftime("%b-%d_%H:%M")}.png")
+	plt.savefig(plots_dir / f"training_loss_{datetime.now().strftime('%b-%d_%H:%M')}.png")
 	plt.close()
 
 def plot_streamlines_comparison(
@@ -660,7 +676,7 @@ def get_probes_data(
 		min_time = min(pred_time_list)
 		max_time = max(pred_time_list)
 		interval_time = round(0.01, 2)
-		timestamps = np.round(np.arange(min_time, max_time + interval_time, interval_time), 2)
+		timestamps = np.round(np.arange(min_time, max_time, interval_time), 2)
 	else:
 		timestamps = full_time_list
 
@@ -772,7 +788,7 @@ def plot_everything(
 	plot_start_time: float,
 	plot_end_time: float,
 	residual_limit: float,
-	training_config: TrainingConfig,
+	training_config: NaturalConvectionConfig,
 	metrics_dir: Path,
 	ground_truth_dir: Path,
 	prediction_dir: Path,
@@ -865,7 +881,7 @@ def plot_everything(
 def transfer_to_required_directory(dir_name:str, 
 								   case:str, 
 								   timesteps:int=10000,
-								   base_dir: str = "/home/shilaj/repitframework/repitframework"):
+								   base_dir: str = "/home/shilaj/shilaj_data/repitframework/repitframework"):
 	destination_dir = base_dir + f"/Assets/natural_convection_{case}_study/{timesteps}timesteps/{dir_name}"
 
 	if not os.path.exists(destination_dir):
@@ -873,12 +889,12 @@ def transfer_to_required_directory(dir_name:str,
 
 	today_date = datetime.now().strftime("%Y-%m-%d")
 	solver_name = Path(f"natural_convection_{case}")
-	logs_path = Path("/home/shilaj/repitframework/repitframework/logs", solver_name, today_date, "Training.log")
-	pred_metrics_path = Path("/home/shilaj/repitframework/repitframework/ModelDump", solver_name, "prediction_metrics.ndjson")
-	training_metrics_path = Path("/home/shilaj/repitframework/repitframework/ModelDump", solver_name, "training_metrics.ndjson")
-	initial_losses_path = Path("/home/shilaj/repitframework/repitframework/ModelDump", solver_name, "initial_losses.json")
-	plots_path = Path("/home/shilaj/repitframework/repitframework/plots", solver_name)
-	assets_path = Path("/home/shilaj/repitframework/repitframework/Assets", solver_name)
+	logs_path = Path(f"{base_dir}/logs", solver_name, today_date, "Training.log")
+	pred_metrics_path = Path(f"{base_dir}/ModelDump", solver_name, "prediction_metrics.ndjson")
+	training_metrics_path = Path(f"{base_dir}/ModelDump", solver_name, "training_metrics.ndjson")
+	initial_losses_path = Path(f"{base_dir}/ModelDump", solver_name, "initial_losses.json")
+	plots_path = Path(f"{base_dir}/plots", solver_name)
+	assets_path = Path(f"{base_dir}/Assets", solver_name)
 	
 	files_to_move = [
 		logs_path,
@@ -915,4 +931,4 @@ if __name__ == "__main__":
 		prediction_dir=prediction_dir,
 		plots_dir=plots_dir
 		)
-	# transfer_to_required_directory("10epochs100res", "case3", 10000)
+	transfer_to_required_directory("2epochs5res_FVFNO1D", "case1", 10000)

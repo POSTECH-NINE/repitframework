@@ -1,1 +1,1 @@
-from .ResidualNaturalConvection import residual_heat, residual_mass, residual_momentum, residue
+from .ResidualNaturalConvection import residual_heat, residual_mass, residual_momentum

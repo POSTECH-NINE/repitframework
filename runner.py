@@ -14,10 +14,12 @@ torch.set_default_dtype(torch.float64)
 torch.manual_seed(1004)
 torch.cuda.manual_seed_all(1004)
 np.random.seed(1004)
+torch.autograd.set_detect_anomaly(True)
 
 def hybrid_train_predict(training_config:NaturalConvectionConfig,
 						 openfoam_config:OpenfoamConfig,
 						 saved_model_name:str=None,
+						 initial_training_epochs:int=0,
 						 transfer_learning_epochs:int=2) -> None:
 	"""
 	Function to train and predict using the BaseHybridTrainer and BaseHybridPredictor classes.
@@ -29,6 +31,9 @@ def hybrid_train_predict(training_config:NaturalConvectionConfig,
 	predictor = BaseHybridPredictor(training_config=training_config)
 	# trainer = BaseHybridTrainer(training_config=training_config)
 	print("BaseHybridTrainer initialized successfully.")
+
+	trainer.training_config.epochs = initial_training_epochs
+
 
 	openfoam_utils = OpenfoamUtils(openfoam_config)
 	first_training = True
@@ -42,11 +47,10 @@ def hybrid_train_predict(training_config:NaturalConvectionConfig,
 	cfd_timesteps = 0
 	while running_time < training_config.prediction_end_time:
 		# Run CFD first:
-		with Timer() as cfd_timer:
-			openfoam_utils.run_solver(
-				start_time=running_time, 
-				end_time=training_end_time,
-				save_to_numpy=True
+		cfd_timer = openfoam_utils.run_solver(
+			start_time=running_time, 
+			end_time=training_end_time,
+			save_to_numpy=True
 			)
 		if training_end_time >= trainer.training_config.prediction_end_time: break
 		# Create dataset instance
@@ -58,10 +62,17 @@ def hybrid_train_predict(training_config:NaturalConvectionConfig,
 			first_training=first_training,
 			vars_list=training_config.get_variables(),
 			extended_vars_list=training_config.extend_variables(),
-			do_normalize=training_config.do_normalize,
-			left_wall_temperature=training_config.left_wall_temperature,
-			right_wall_temperature=training_config.right_wall_temperature,
-			do_feature_selection= training_config.do_feature_selection
+			dims=training_config.data_dim,
+			round_to=training_config.round_to,
+			grid_x = training_config.grid_x,
+			grid_y = training_config.grid_y,
+			grid_z = training_config.grid_z,
+			grid_step = training_config.grid_step,
+			output_dims = training_config.output_dims,
+			do_normalize = training_config.do_normalize,
+			left_wall_temperature = training_config.left_wall_temperature,
+			right_wall_temperature = training_config.right_wall_temperature,
+			do_feature_selection = training_config.do_feature_selection
 		)
 		train_loader, val_loader = train_val_split(
 			dataset, 
@@ -101,7 +112,7 @@ def hybrid_train_predict(training_config:NaturalConvectionConfig,
 		)
 		# Store times 
 		if running_time > training_config.training_start_time:
-			cfd_times += cfd_timer.elapsed.total_seconds()
+			cfd_times += cfd_timer
 			update_times += update_timer.elapsed.total_seconds()
 
 		with Timer() as ml_timer:
@@ -129,7 +140,7 @@ def hybrid_train_predict(training_config:NaturalConvectionConfig,
 		# trainer.training_config.epochs, cfd_runs = dynamic_parameters(switch_count)
 		trainer.training_config.epochs = transfer_learning_epochs
 		cfd_runs = 10
-		# if switch_count == 2: break
+		# if switch_count == 3: break
 		cfd_timesteps += cfd_runs
 		training_end_time = round(running_time + cfd_runs*trainer.training_config.write_interval,
 								  2)
@@ -168,8 +179,7 @@ if __name__ == "__main__":
 		if_cfd_alone_time = hybrid_train_predict(training_config, 
 							openfoam_config,
 							saved_model_name=f"init_model_{training_config.model_type}.pth",
+							initial_training_epochs=0,
 							transfer_learning_epochs=2)
 	training_config.logger.info("Hybrid training and prediction process completed.")
-	training_config.logger.info(f"Total time taken: {total_timer.elapsed.total_seconds()} seconds")
-	training_config.logger.info(f"Real acceleration: {if_cfd_alone_time/total_timer.elapsed.total_seconds()}")
-	# save_loss(training_config=training_config, merge_initial_losses=False)
+	save_loss(training_config=training_config, merge_initial_losses=True)

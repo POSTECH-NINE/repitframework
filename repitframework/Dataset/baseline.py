@@ -106,6 +106,8 @@ class BaseDataset(Dataset):
 				)
 			)
 
+		if self.dims == 3: 
+			self.SELECT_DIMS["BCHW"]= (1,2,3)
 		# Load data for indexing
 		self.inputs, self.labels = self._inputs_labels()
 
@@ -167,9 +169,9 @@ class BaseDataset(Dataset):
 
 		temp = []
 		for data in numpy_data:
-			if len(data.shape) > 2:
+			if len(data.shape) > self.dims:  # Multi-dimensional data
 				for i in range(self.dims):
-					temp.append(data[:, :, i])
+					temp.append(data[..., i])
 			else:
 				temp.append(data)
 		return np.stack(temp, axis=0)  # Output: [n_vars, grid_y, grid_x]

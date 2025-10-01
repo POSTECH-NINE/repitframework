@@ -8,7 +8,7 @@ import Ofpp
 import numpy as np
 from tqdm import tqdm
 
-from ..config import OpenfoamConfig
+from repitframework.config import OpenfoamConfig
 
 class OpenfoamUtils:
     def __init__(self, openfoam_config:OpenfoamConfig, 
@@ -199,7 +199,7 @@ class OpenfoamUtils:
         if del_dirs:
             #We save the last time directory for future reference.
             command_to_delete_directories = ["foamListTimes", "-case", solver_dir,
-                                             "-rm", "-time",",".join(time_list[:-1])]
+                                             "-rm", "-time",",".join([str(time) for time in time_list[:-1]])]
             command_output = OpenfoamUtils.run_subprocess(command_to_delete_directories)
             openfoam_config.logger.debug(f"Time directories deleted successfully: {command_output}")
         
@@ -394,15 +394,18 @@ class OpenfoamUtils:
 
 if __name__ == "__main__":
     openfoam_config = OpenfoamConfig()
-    openfoam_utils = OpenfoamUtils(openfoam_config)
+    openfoam_utils = OpenfoamUtils(openfoam_config,
+                                   solver_dir=Path("/home/shilaj/shilaj_data/repitframework/repitframework/Solvers/natural_convection_case1_3D"),
+                                   assets_dir=Path("/home/shilaj/shilaj_data/repitframework/repitframework/Assets"))
     start_time = timeit.default_timer()
-    openfoam_utils.run_solver(start_time=10.0, end_time=10.03, write_interval=0.01,save_to_numpy=True, del_dirs=False)
-    # openfoam_utils.parse_to_numpy(
-    #     openfoam_config, 
-    #     start_time=100.0, 
-    #     end_time=110.0, 
-    #     solver_dir=f"/home/shilaj/repitframework/repitframework/Solvers/natural_convection_case4",
-    #     save_path=f"/home/shilaj/repitframework/repitframework/Assets/natural_convection_case4_backup",
-    # )
+    # openfoam_utils.run_solver(start_time=51.64, end_time=110.0, write_interval=0.01,save_to_numpy=False, del_dirs=False)
+    openfoam_utils.parse_to_numpy(
+        openfoam_config, 
+        start_time=51.64, 
+        end_time=110.0, 
+        solver_dir=f"/home/shilaj/shilaj_data/repitframework/repitframework/Solvers/natural_convection_case1_3D",
+        save_path=f"/home/shilaj/shilaj_data/repitframework/repitframework/Assets/natural_convection_case1_3D_backup",
+        del_dirs=False
+    )
     end_time = timeit.default_timer()
     print(f"Time taken: {end_time-start_time} seconds")

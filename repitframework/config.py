@@ -3,10 +3,9 @@ from datetime import datetime
 from pathlib import Path
 import logging
 import json
-from typing import List, Literal
+from typing import Literal
 
-
-import torch.cuda as cuda
+from torch import cuda
 import torch
 
 @dataclass
@@ -35,11 +34,12 @@ class BaseConfig:
 	grid_x: int = 200 # Number of grid points in x-direction
 	grid_y: int = 200 # Number of grid points in y-direction
 	grid_z: int = 1 # Number of grid points in z-direction
-	grid_step: int|float = 0.005 # Grid step size
+	grid_shape: tuple = tuple(item for item in (grid_z, grid_y, grid_x) if item > 1) # Shape of the grid based on data_dim
+	grid_step: int|float = 1/grid_x # Assuming uniform grid spacing
 	write_interval: int|float = 0.01 # Time step size
 	round_to: int = len(str(write_interval).split(".")[-1]) # Number of decimal places to round to
 
-	def extend_variables(self):
+	def extend_variables(self)->list[str]:
 		"""
 		Because we have a dictionary that separates variables into scalars and vectors,
 		we need to combine them into a single list. We need to further differentiate vectors 
@@ -160,14 +160,14 @@ class TrainingConfig(BaseConfig):
 	epochs: int = 5000
 	learning_rate: float = 1e-3
 	residual_threshold: float = 5.0 # Adapted from the paper: Section 4.1; page 8
-	device: str = "cuda:1" if cuda.is_available() else "cpu"
+	device: str = "cuda" if cuda.is_available() else "cpu"
 	loss = torch.nn.MSELoss()
-	activation = torch.nn.ReLU
+	activation = torch.nn.ReLU()
 
 	training_start_time = 10.0
 	training_end_time = 10.03
 	prediction_start_time = 10.03
-	prediction_end_time = 20.0
+	prediction_end_time = 110.0
 	bc_type:str = "enforced" # either "enforced" or "ground_truth"
 
 	# Dataset parameters:
@@ -176,7 +176,7 @@ class TrainingConfig(BaseConfig):
 	output_dims: Literal["BD", "BCD", "BCHW"] = "BD"
 
 	# Model parameters: To understand them better, Go to: ./model_selector.py
-	model_type: str = "fvmn" # or "fvfno2d"
+	model_type: str = "fvfno1d" # or "fvfno2d"
 	optimizer_type:str = "adam"
 	scheduler_type:str = None # If None, no scheduler will be used.
 	model_kwargs: dict = field(default_factory=lambda: {
@@ -202,10 +202,15 @@ class TrainingConfig(BaseConfig):
 	def __post_init__(self):
 		self.logger = self.setup_logger("TrainingLogger",self.log_file)
 		variables = self.extend_variables()
+		input_channels = len(variables)*((2*self.data_dim)+1) if self.do_feature_selection else len(variables)
+		
 		new_kwargs = {
-			"vars_list": variables,
+			"vars": variables,
 			"activation": self.activation,
-			"input_shape": len(variables)*5 if self.do_feature_selection else len(variables)}
+			"input_channels": input_channels,
+			"output_channels": 1, # If the network is Node assigned, the output channels should be set 1.
+			"feature_selection": self.do_feature_selection
+			}
 		self.model_kwargs.update(new_kwargs)
 
 		self.optim_kwargs = {
@@ -228,17 +233,17 @@ class NaturalConvectionConfig(TrainingConfig):
 
 	def _assign_temperature_profiles(self,):
 		# TODO: for ease of use, it is hard-coded but think about making it dynamic.
-		if self.solver_dir.name == "natural_convection_case1":
+		if  "natural_convection_case1" in self.solver_dir.name:
 			self.left_wall_temperature = 307.75
 			self.right_wall_temperature = 288.15
-		elif self.solver_dir.name == "natural_convection_case2":
+		elif "natural_convection_case2" in self.solver_dir.name:
 			self.left_wall_temperature = 317.75
 			self.right_wall_temperature = 278.15
-		elif self.solver_dir.name == "natural_convection_case3":
+		elif "natural_convection_case3" in self.solver_dir.name:
 			self.left_wall_temperature = 327.75
 			self.right_wall_temperature = 268.15
 		else:
-			raise ValueError(f"Unknown case name: {self.solver_dir.name}. Please check the case name.")
+			UserWarning(f"Unknown case name: {self.solver_dir.name}. Please check the case name.")
 	
 	def __post_init__(self):
 		super().__post_init__()

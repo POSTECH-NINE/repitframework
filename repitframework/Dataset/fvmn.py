@@ -1,4 +1,5 @@
-from typing import List
+from typing import List, Union, Literal, Optional
+from pathlib import Path
 import numpy as np
 
 from .baseline import BaseDataset
@@ -46,12 +47,26 @@ class FVMNDataset(BaseDataset):
 		do_feature_selection: bool
 			- If True, then the correlated features will be added to the data.
 	"""
-	def __init__(self, *args,
+	def __init__(self,
+		start_time: Union[int, float],
+		end_time: Union[int, float],
+		time_step: Union[int, float],
+		dataset_dir: Union[str, Path],
+		first_training: bool = False,
+		vars_list: Optional[List[str]] = ["T","U"],
+		extended_vars_list: Optional[List[str]] = ["T", "U_x", "U_y"],
+		dims: int = 2,
+		round_to: int = 2,
+		grid_x: int = 200,
+		grid_y: int = 200,
+		grid_z: int = 1,
+		grid_step: float = 0.005,
+		output_dims: Literal["BD", "BCD", "BCHW"] = "BD",
+		do_normalize: bool = True,
 		left_wall_temperature: float = 288.15,
 		right_wall_temperature: float = 307.75,
 		bc_type: str = "enforced",
-		do_feature_selection: bool = True, 
-		**kwargs
+		do_feature_selection: bool = True
 		):
 
 		self.left_wall_temperature = left_wall_temperature
@@ -59,7 +74,29 @@ class FVMNDataset(BaseDataset):
 		self.bc_type = bc_type
 		self.do_feature_selection = do_feature_selection
 
-		super().__init__(*args, **kwargs)
+		super().__init__(
+		start_time=start_time,
+		end_time=end_time,
+		time_step=time_step,
+		dataset_dir=dataset_dir,
+		first_training=first_training,
+		vars_list=vars_list,
+		extended_vars_list=extended_vars_list,
+		dims=dims,
+		round_to=round_to,
+		grid_x=grid_x,
+		grid_y=grid_y,
+		grid_z=grid_z,
+		grid_step=grid_step,
+		output_dims=output_dims,
+		do_normalize=do_normalize,
+		)
+
+		self.left_wall_temperature = left_wall_temperature
+		self.right_wall_temperature = right_wall_temperature
+		self.bc_type = bc_type
+		self.do_feature_selection = do_feature_selection
+
 		self.inputs, self.labels = self._inputs_labels()
 
 	def _prepare_input(self, time) -> np.ndarray:
@@ -117,7 +154,8 @@ class FVMNDataset(BaseDataset):
 		next_time = round(time + self.time_step, self.round_to)
 		data_t_next = self._prepare_input(next_time)
 		if self.do_feature_selection:
-			return data_t_next[::5] - data_t[::5] # Because prepare input always adds features in dimension 0.
+			skip_step = (2*self.dims)+1
+			return data_t_next[::skip_step] - data_t[::skip_step] # Because prepare input always adds features in dimension 0.
 		return data_t_next - data_t
 	
 	

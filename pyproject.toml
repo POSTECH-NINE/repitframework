@@ -1,0 +1,41 @@
+# pyproject.toml
+
+[build-system]
+requires = ["setuptools>=64.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "repitframework"
+version = "1.0"
+authors = [
+    { name = "Shilaj Baral", email = "shilajbaral@jbnu.ac.kr" },
+]
+description = "Automation framework for ML-CFD cross-computation."
+readme = "README.md"
+requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent", # Changed to be more general
+]
+dependencies = [
+    "numpy",
+    "pandas",
+    "matplotlib",
+    "Ofpp",
+    "torch",
+    "imageio",
+    "tqdm",
+    "seaborn",
+    "einops"
+]
+
+[project.urls]
+Homepage = "https://github.com/JBNU-NINE/repitframework"
+Repository = "https://github.com/JBNU-NINE/repitframework"
+
+[tool.setuptools.packages.find]
+# This section replaces find_packages()
+# It will automatically find your packages.
+# If your packages are in a `src` directory, change `where = ["."]` to `where = ["src"]`
+where = ["."]

@@ -8,64 +8,74 @@ nx = foam_config.grid_x
 grid_step = foam_config.grid_step
 time_step = foam_config.write_interval
 
-def residual_mass(ux_matrix:np.ndarray,
-                  uy_matrix:np.ndarray,
-                  order:str="C")-> float:
-    '''
-    Compute the residual: mass conservation
+def residual_mass(
+    velocity_field: np.ndarray
+) -> float:
+    """
+    Computes the mass conservation residual for a 1D, 2D, or 3D velocity field.
+    
+    The function calculates the squared divergence of the velocity field using a
+    second-order central difference scheme and normalizes it.
+
     Formula: 
-    Rs_mass = {d(ux)/dx + d(uy)/dy}^2.sum()/ny*nx
+    Rs_mass = sum({divergence(U)}^2) / num_points
+    where divergence(U) = d(u_x)/dx + d(u_y)/dy + d(u_z)/dz
 
-    Arguments:
-    ux_matrix: np.ndarray: matrix of x-velocity, shape = [ny,nx]
-    uy_matrix: np.ndarray: matrix of y-velocity, shape = [ny,nx]
+    Args:
+    ----
+    velocity_field: np.ndarray
+        A numpy array representing the vector velocity field.
+        - Shape must be (*grid_shape, num_components).
+        - Assumes a grid axis order of (Z, Y, X) and a component order of (u_x, u_y, u_z).
+    grid_step: float
+        The uniform distance between grid points.
 
-    Return:
-    Rs_mass_sum: float: sum of Rs_mass
-    '''
-    # assert ux_matrix.shape == (ny,nx), f"Shape is {ux_matrix.shape} but should be (ny,nx)"
-    assert ux_matrix.shape == uy_matrix.shape, "Shape of ux_matrix and uy_matrix should be the same"
-
-    if order == "F":
-        ux_with_down_boundary = ux_matrix[2:ny,1:nx-1]
-        ux_with_up_boundary = ux_matrix[0:ny-2,1:nx-1]
-        uy_with_right_boundary = uy_matrix[1:ny-1,2:nx]
-        uy_with_left_boundary = uy_matrix[1:ny-1,0:nx-2]
-
-        pinn_dudx = (ux_with_down_boundary - ux_with_up_boundary)/(2*grid_step)
-        pinn_dvdy = (uy_with_right_boundary - uy_with_left_boundary)/(2*grid_step)
-
-    elif order == "C":
-        ux_with_right_boundary = ux_matrix[1:ny-1,2:nx]
-        ux_with_left_boundary = ux_matrix[1:ny-1,0:nx-2]
-        uy_with_top_boundary = uy_matrix[0:ny-2,1:nx-1]
-        uy_with_down_boundary = uy_matrix[2:ny,1:nx-1]
-
-        pinn_dudx = (ux_with_right_boundary - ux_with_left_boundary)/(2*grid_step)
-        pinn_dvdy = (uy_with_down_boundary - uy_with_top_boundary)/(2*grid_step)
-
-    else:
-        raise ValueError("Order should be either 'C' or 'F'")
-
+    Returns:
+    -------
+    float
+        The sum of the squared mass residual.
+    """
+    num_spatial_dims = velocity_field.ndim - 1
     
-    Rs_mass = pinn_dudx+pinn_dvdy
-    Rs_mass_sq = Rs_mass*Rs_mass
-    Rs_mass_sum = Rs_mass_sq.sum()/(ny*nx)
-    return Rs_mass_sum
+    # Check for consistency
+    num_components = velocity_field.shape[-1]
+    if num_spatial_dims != num_components:
+        raise ValueError(
+            f"Number of spatial dimensions ({num_spatial_dims}) must match "
+            f"the number of velocity components ({num_components})."
+        )
 
-def residue(pred:np.ndarray,padded: bool=True):
-    '''
-    Compute the residual: mass conservation
-    Arguments: 
-    pred: np.ndarray: prediction at time t, shape = [200,200,3(ux,uy,t)]
-    '''
-    if not padded: 
-        raise NotImplementedError("Not implemented for non-padded case")
+    divergence = np.zeros(np.array(velocity_field.shape[:-1]) - 2)
+
+    # Calculate divergence: d(u_x)/dx + d(u_y)/dy + d(u_z)/dz
+    for i in range(num_spatial_dims):
+        component_index = i
+        # This maps component to axis: u_x -> x, u_y -> y, u_z -> z
+        axis_index = num_spatial_dims - 1 - i
+
+        component_field = velocity_field[..., component_index]
+
+        # Create slicers for the central difference calculation
+        # These create a view on the "core" of the domain, excluding boundaries
+        core_slicer = [slice(1, -1)] * num_spatial_dims
+        
+        # Slice for the point ahead along the current axis
+        plus_slicer = list(core_slicer)
+        plus_slicer[axis_index] = slice(2, None)
+        
+        # Slice for the point behind along the current axis
+        minus_slicer = list(core_slicer)
+        minus_slicer[axis_index] = slice(None, -2)
+
+        partial_derivative = (component_field[tuple(plus_slicer)] - component_field[tuple(minus_slicer)]) / (2 * grid_step)
+        divergence += partial_derivative
+
+    # Calculate the final residual
+    residual_sq = divergence * divergence
+    num_points = np.prod(velocity_field.shape[:-1])
+    residual_sum = residual_sq.sum() / num_points
     
-    ux_matrix = pred[:,:,0]
-    uy_matrix = pred[:,:,1]
-    Rs_mass_sum = residual_mass(ux_matrix,uy_matrix)
-    return Rs_mass_sum
+    return residual_sum
 
 def residual_momentum(ux_matrix:np.ndarray, ux_matrix_prev:np.ndarray, uy_matrix:np.ndarray, t_matrix:np.ndarray):
     '''

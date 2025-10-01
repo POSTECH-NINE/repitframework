@@ -75,9 +75,9 @@ docker exec -it repit_container bash
 ```
 ### Start/Stop/Restart the container:
 ```
-docker compose stop
-docker compose start
-docker compose restart
+docker stop repit_container
+docker start repit_container
+docker restart repit_container
 ```
 
 # Build the LAZY (UTLRA PRO MAX) way: 

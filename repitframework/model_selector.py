@@ -5,13 +5,16 @@ import inspect
 import torch
 
 from .Models.FVMN import FVMNetwork
-from .Models.NeuralOperator import FVFNO2D
+from .Models.NeuralOperator import FNO2D, FVFNO2D, FNO1D, FVFNO1D
 
 
 class ModelSelector:
     available_models = {
         "fvmn": FVMNetwork,
-        "fvfno2d": FVFNO2D
+        "fno2d": FNO2D,
+        "fvfno2d": FVFNO2D,
+        "fno1d": FNO1D,
+        "fvfno1d": FVFNO1D
     }
 
     def __new__(cls, model_type: str, model_kwargs: dict = None)->torch.nn.Module:
@@ -24,8 +27,11 @@ class ModelSelector:
             warnings.warn(
                 "No model_kwargs provided. Using default parameters for the model."
             )
-        return model_class(**model_kwargs) if model_kwargs else model_class()
-    
+        valid_args = set(inspect.signature(model_class.__init__).parameters.keys()) - {"self"}
+        # Filter model_kwargs to only include valid arguments
+        filtered_kwargs = {k: v for k, v in model_kwargs.items() if k in valid_args}
+        return model_class(**filtered_kwargs) if filtered_kwargs else model_class()
+
 class OptimizerSelector:
     available_optimizers = {
         "adam": torch.optim.Adam,

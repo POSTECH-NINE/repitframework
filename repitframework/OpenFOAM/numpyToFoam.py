@@ -2,12 +2,13 @@ from pathlib import Path
 import subprocess
 import re
 from copy import deepcopy
+from typing import Dict
 
 import numpy as np
 import torch
 import Ofpp
 
-from ..config import OpenfoamConfig
+from ..config import TrainingConfig, OpenfoamConfig
 from .utils import OpenfoamUtils
 
 torch.set_default_dtype(torch.float64)
@@ -332,9 +333,50 @@ def numpyToFoam(openfoam_config:OpenfoamConfig,
 	output_string += include_all_features_NC(temperature_data, latestML_time_dir, velocity_data, adjust_phi=True) #TODO: change the name for use_true_phi to correct_phi
 	return output_string   
 
+def numpyToFoamDirect(training_config:TrainingConfig, 
+				latestML_time:float,
+				data_dict: Dict[str, np.ndarray],
+				latestCFD_time:int|float=None,
+				solver_dir:Path=None
+				) -> str:
 	
+	solver_dir = Path(solver_dir) if solver_dir else training_config.solver_dir
+
+	if not latestCFD_time: 
+		latestCFD_time = OpenfoamUtils.max_time_directory(solver_dir, round_to=training_config.round_to)
+	else:
+		latestCFD_time = int(latestCFD_time) if latestCFD_time.is_integer() else latestCFD_time
+
+	latestCFD_time_dir = Path.joinpath(solver_dir,f"{latestCFD_time}") # time directory for current time
+
+
+	# Because, in openfoam if the time directory is float at the terminal values like; 11.0, 12.0, 13.0 are converted to 11, 12, 13.
+	ml_dir_time_name = int(latestML_time) if latestML_time.is_integer() else latestML_time
+	latestML_time_dir  = Path.joinpath(solver_dir, f"{ml_dir_time_name}") # time directory for next time (latestCFD_time + 1)
+
+	# copy the contents of latest CFD simulation time to the latest ML simulation time.
+	if not latestML_time_dir.exists(): subprocess.run(["cp", "-r", latestCFD_time_dir, latestML_time_dir], check=True)
+
+	output_string = manage_time_uniform(solver_dir, ml_dir_time_name)
+
+	for variable, data in data_dict.items():
+		openfoam_var_path = Path.joinpath(latestML_time_dir, f"{variable}") # openfoam variable path: where we write the numpy data    
+
+		data_str = "(\n" + parse_numpy(data) + "\n)\n;" # convert numpy data to OpenFOAM format
+		
+		with open(openfoam_var_path, "r") as file:
+			foam_data_temp = file.read()
+			foam_data = re.sub(r'(location\s*)"([^"]*)"',rf'\1"{latestML_time}"',foam_data_temp) # update the location to the next time step
+			foam_data = re.sub(r'\([\s\S]*?\)\n;', f'{data_str}',foam_data,count=1) # Update the data in the OpenFOAM file; count=1 to replace only the first occurrence.
+
+		with open(openfoam_var_path, "w") as file:
+			file.write(foam_data)
+
+	output_string += include_all_features_NC(temperature_data=data_dict.get("T"), latestML_time_dir=latestML_time_dir, velocity_data=data_dict.get("U"), adjust_phi=True) #TODO: change the name for use_true_phi to correct_phi
+	return output_string
+
 if __name__ == "__main__":
-	openfoam_config = OpenfoamConfig()
+	openfoam_config = TrainingConfig()
 	output_string = numpyToFoam(openfoam_config,latestCFD_time=10.0,latestML_time=10.53, is_ground_truth=False,
 							 assets_path=Path("/home/shilaj/shilaj_data/repit_tf/DataSample"))
 	print(output_string)
