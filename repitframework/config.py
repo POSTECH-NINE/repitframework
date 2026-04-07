@@ -147,7 +147,7 @@ class OpenfoamConfig(BaseConfig):
 	solver_type:str = "buoyantFoam"
 	start_time = 10.0
 	end_time = 10.02
-	num_processors: int = 2 # Number of processors for parallel execution. If 1, it will run in serial.
+	num_processors: int = 1 # Number of processors for parallel execution. If 1, it will run in serial.
 
 	def __post_init__(self):
 		self.case_name = self.solver_dir.name
@@ -235,8 +235,12 @@ class NaturalConvectionConfig(TrainingConfig):
 	def _assign_temperature_profiles(self,):
 		# TODO: for ease of use, it is hard-coded but think about making it dynamic.
 		if  "natural_convection_case1" in self.solver_dir.name:
-			self.left_wall_temperature = 307.75
-			self.right_wall_temperature = 288.15
+			if "Ampofo" in self.solver_dir.name:
+				self.left_wall_temperature = 323.15
+				self.right_wall_temperature = 283.15
+			else:
+				self.left_wall_temperature = 307.75
+				self.right_wall_temperature = 288.15
 		elif "natural_convection_case2" in self.solver_dir.name:
 			self.left_wall_temperature = 317.75
 			self.right_wall_temperature = 278.15

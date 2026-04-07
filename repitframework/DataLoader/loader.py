@@ -32,7 +32,7 @@ def train_val_split(
 	train_loader = DataLoader(train_dataset, 
 							batch_size=batch_size, 
 							shuffle=True, 
-							drop_last=True, 
+							drop_last=False, 
 							pin_memory=True)
 	val_loader = DataLoader(val_dataset, 
 							batch_size=batch_size, 

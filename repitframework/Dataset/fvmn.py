@@ -136,7 +136,7 @@ class FVMNDataset(BaseDataset):
 		data = [add_feature(data) for data in temp]  
 		return np.concatenate(data, axis=0) # Always concatenate (already stacked in add_feature) in axis=0: ["BD", "BCD", "BCHW"]
 	
-	def _prepare_label(self, time: float) -> np.ndarray:
+	def _prepare_label(self, data_t: np.ndarray, data_t_next: np.ndarray) -> np.ndarray:
 		"""
 		Returns difference between input at t+dt and t for all variables.
 		Args
@@ -150,9 +150,6 @@ class FVMNDataset(BaseDataset):
 		But we want the model to predict the central cells, from which we can again do the feature selection for
 		prediction. Until now, for [BD, BCD, BCHW]-> D,C,C contain these features, so hard coded it.
 		"""
-		data_t = self._prepare_input(time)
-		next_time = round(time + self.time_step, self.round_to)
-		data_t_next = self._prepare_input(next_time)
 		if self.do_feature_selection:
 			skip_step = (2*self.dims)+1
 			return data_t_next[::skip_step] - data_t[::skip_step] # Because prepare input always adds features in dimension 0.

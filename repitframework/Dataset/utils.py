@@ -206,7 +206,7 @@ def parse_numpy(
     # Case 2: Vector data (e.g., velocity)
     # The loaded data is a 2D array of shape (n_points, n_components)
     elif data.ndim == 2:
-        num_components = data_dim
+        num_components = data.shape[-1]
         
         # Reshape each component, squeeze to remove singleton dimensions, and stack.
         components = [data[:, i].reshape(grid_shape).squeeze() for i in range(num_components)]

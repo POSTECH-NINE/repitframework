@@ -11,9 +11,12 @@ repitframework.egg-info/
 **/[0-9]/       # Ignore integer directories
 **/[0-9]*.[0-9]*/ # Ignore float directories
 !/**/0/      # Except this directory
-!/**/10/
+/**/10/
 /random/*
 !/random/*.ipynb
 !/random/*.py
 /order_of_accuracy/*
 build/
+data/
+random/
+UNet_Transformer_Share/

@@ -4,11 +4,11 @@ setup(
     name="repitframework",  # Name of the package
     version="1.0",  # Version of the package
     author="Shilaj Baral",
-    author_email="shilajbaral@jbnu.ac.kr",
+    author_email="shilaj@postech.ac.kr",
     description="Automation framework for ML-CFD cross-computation.",
     long_description=open("README.md").read(),  # Can read from README
     long_description_content_type="text/markdown",  # Specify format
-    url="https://github.com/POSTECH/repitframework",  # Project URL
+    url="https://github.com/POSTECH-NINE/repitframework",  # Project URL
     packages=find_packages(),  # Automatically find packages in the directory
     install_requires=[
         "numpy",   # List of dependencies

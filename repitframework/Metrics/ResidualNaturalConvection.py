@@ -39,7 +39,7 @@ def residual_mass(
     
     # Check for consistency
     num_components = velocity_field.shape[-1]
-    if num_spatial_dims != num_components:
+    if num_spatial_dims > num_components:
         raise ValueError(
             f"Number of spatial dimensions ({num_spatial_dims}) must match "
             f"the number of velocity components ({num_components})."

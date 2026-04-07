@@ -8,7 +8,7 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 from torch import Tensor
 
-from .utils import (
+from repitframework.Dataset.utils import (
 	normalize, 
 	parse_numpy, 
 	match_input_dim, 
@@ -176,13 +176,13 @@ class BaseDataset(Dataset):
 				temp.append(data)
 		return np.stack(temp, axis=0)  # Output: [n_vars, grid_y, grid_x]
 
-	def _prepare_label(self, time: float) -> np.ndarray:
+	def _prepare_label(self, data_t: np.ndarray, data_t_next: np.ndarray) -> np.ndarray:
 		"""
 		Returns difference between input at t+dt and t for all variables.
 		"""
-		data_t = self._prepare_input(time)
-		next_time = round(time + self.time_step, self.round_to)
-		data_t_next = self._prepare_input(next_time)
+		# data_t = self._prepare_input(time)
+		# next_time = round(time + self.time_step, self.round_to)
+		# data_t_next = self._prepare_input(next_time)
 		return data_t_next - data_t
 
 	def _normalization_routine(
@@ -191,11 +191,14 @@ class BaseDataset(Dataset):
 		inputs: np.ndarray,
 		labels: np.ndarray,
 		read_write_flag: str = "w",
+		select_dims: Optional[Tuple[int]] = None
 	) -> Tuple[Tensor, Tensor]:
 		"""
 		Routine for normalization and saving/reading normalization statistics.
 		"""
 		metrics_save_path = Path(metrics_save_path)
+		if select_dims is None:
+			select_dims = self.SELECT_DIMS[self.output_dims]
 		if read_write_flag == "r":
 			if not metrics_save_path.exists():
 				raise FileNotFoundError(f"Normalization metrics file missing: {metrics_save_path}")
@@ -207,18 +210,18 @@ class BaseDataset(Dataset):
 			label_std = np.array(metrics["label_std"])
 
 			norm_inputs, _, _ = normalize(
-				inputs, mean=input_mean, std=input_std, select_dims=self.SELECT_DIMS[self.output_dims]
+				inputs, mean=input_mean, std=input_std, select_dims=select_dims
 			)
 			norm_labels, _, _ = normalize(
-				labels, mean=label_mean, std=label_std, select_dims=self.SELECT_DIMS[self.output_dims]
+				labels, mean=label_mean, std=label_std, select_dims=select_dims
 			)
 			return Tensor(norm_inputs), Tensor(norm_labels)
 
 		norm_inputs, input_mean, input_std = normalize(
-			inputs, select_dims=self.SELECT_DIMS[self.output_dims]
+			inputs, select_dims=select_dims
 		)
 		norm_labels, label_mean, label_std = normalize(
-			labels, select_dims=self.SELECT_DIMS[self.output_dims]
+			labels, select_dims=select_dims
 		)
 		with open(metrics_save_path, "w") as f:
 			json.dump(
@@ -245,13 +248,18 @@ class BaseDataset(Dataset):
 		"""
 		Loads all input and label data for the dataset, shapes and normalizes.
 		"""
+		all_timesteps_data = [self._prepare_input(time) for time in self.time_list]
+
 		inputs = []
 		labels = []
-		# Exclude final time since label is diff (t+1)-t
-		for time in self.time_list[:-1]:
-			inputs.append(self._prepare_input(time))
-			labels.append(self._prepare_label(time))
 
+		# Exclude final time since label is diff (t+1)-t
+		for i in range(len(self.time_list) - 1):
+			inputs.append(all_timesteps_data[i])
+			labels.append(self._prepare_label(all_timesteps_data[i], all_timesteps_data[i + 1]))
+
+		del all_timesteps_data  # Free memory
+		
 		inputs = match_input_dim(self.output_dims, inputs)
 		labels = match_input_dim(self.output_dims, labels)
 		metrics_save_path = self.dataset_dir / "norm_denorm_metrics.json"
@@ -308,7 +316,7 @@ def create_fake_npy_files(data_dir, start_time, end_time, time_step, grid_x, gri
 
 	for time in time_list:
 		# Scalar field: T
-		T = np.random.uniform(290, 310, size=(grid_x * grid_y, 1))
+		T = np.random.uniform(290, 310, size=(grid_x * grid_y))
 		np.save(data_dir / f"T_{time}.npy", T)
 
 		# Vector field: U (2 components)
@@ -346,7 +354,6 @@ def test_BaseDataset():
 		do_normalize=True
 	)
 
-	print(f"Length of dataset: {len(dataset)}")
 	sample_input, sample_label = dataset[0]
 	print(f"Input shape: {sample_input.shape}")
 	print(f"Label shape: {sample_label.shape}")
