@@ -40,7 +40,7 @@ XRePIT alternates between an OpenFOAM CFD solver and a data-driven neural networ
 
 ## Overview
 
-RePIT-Framework automates the **XRePIT hybrid ML–CFD loop**:
+XRePIT-Framework automates the **hybrid ML–CFD loop**:
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -374,31 +374,7 @@ model = ModelSelector("fvmn", config.model_kwargs)
 
 ## Visualization
 
-`repitframework/plot_utils.py` provides publication-quality figures (Nature journal style).
-
-### All-in-one
-
-```python
-from pathlib import Path
-from repitframework.plot_utils import plot_everything
-
-plot_everything(
-    prediction_dir=Path("repitframework/Assets/natural_convection_case1"),
-    ground_truth_dir=Path("repitframework/Assets/natural_convection_case1_backup"),
-    pred_time_list=[10.05, 10.06, 10.07, 10.08, 10.09, 10.10],
-    save_dir=Path("repitframework/plots"),
-    grid_shape=(200, 200),
-    residual_threshold=5.0,
-)
-```
-
-This generates in `save_dir/`:
-- `field_comparison.png` — side-by-side temperature & velocity fields
-- `l2_errors.png` — relative L2 error over time for each variable
-- `mae_errors.png` — mean/max absolute error over time
-- `streamlines.png` — overlaid streamlines (CFD vs prediction)
-- `spectral_analysis.png` — power spectrum (CFD vs prediction)
-- `residual_divergence.png` — log-scale continuity residual over time
+`repitframework/plot_utils.py` provides code for simple result visualizations.
 
 ### Individual plots
 
