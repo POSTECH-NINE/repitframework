@@ -81,7 +81,7 @@ The **scaled continuity residual** (mass residual relative to an OpenFOAM refere
 |------|-----------|-------|-------------|----------|
 | Case A | 2D | FVMN | 2.05× | ~10⁻³ K |
 | Case A | 2D | FVFNO | 1.44× | ~10⁻³ K |
-| Case A | 3D | FVMN | **4.00×** | ~10⁻³ K |
+| Case A | 3D | FVMN | **3.00×** | ~10⁻³ K |
 | Case B | 2D | FVMN | 2.24× | ~10⁻³ K |
 | Case C | 2D | FVMN | 2.17× | ~10⁻³ K |
 
@@ -229,6 +229,14 @@ source ~/.bashrc
 
 ### Run the full hybrid loop
 
+From the command line:
+
+```bash
+python runner.py
+```
+
+OR from your own script:
+
 ```python
 from repitframework.config import NaturalConvectionConfig, OpenfoamConfig
 from runner import hybrid_train_predict
@@ -245,11 +253,10 @@ hybrid_train_predict(
     transfer_learning_epochs=2,
 )
 ```
-
-Or from the command line:
+To reset the simulation and enable clean restart: 
 
 ```bash
-python runner.py
+python repitframework/foamResetFramework.py
 ```
 
 ### ML-only inference (no OpenFOAM required)

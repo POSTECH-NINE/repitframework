@@ -178,8 +178,8 @@ if __name__ == "__main__":
 	with Timer() as total_timer:
 		if_cfd_alone_time = hybrid_train_predict(training_config, 
 							openfoam_config,
-							saved_model_name=f"init_model_{training_config.model_type}.pth",
-							initial_training_epochs=0,
+							saved_model_name=None,
+							initial_training_epochs=5000,
 							transfer_learning_epochs=2)
 	training_config.logger.info("Hybrid training and prediction process completed.")
 	save_loss(training_config=training_config, merge_initial_losses=True)
